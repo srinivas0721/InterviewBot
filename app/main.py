@@ -29,7 +29,11 @@ app.add_middleware(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=[
+        "http://localhost:5000",
+        "http://localhost:5173", 
+        "https://interviewbot-frontend.onrender.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

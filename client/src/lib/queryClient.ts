@@ -21,8 +21,10 @@ function getFullUrl(path: string): string {
     return path;
   }
   
-  // Combine base URL with path
-  return `${API_BASE_URL}${path}`;
+  // Combine base URL with path, avoiding double slashes
+  const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${baseUrl}${cleanPath}`;
 }
 
 export async function apiRequest(
