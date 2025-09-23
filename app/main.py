@@ -23,7 +23,10 @@ app = FastAPI(
 # Add session middleware
 app.add_middleware(
     SessionMiddleware, 
-    secret_key=settings.session_secret
+    secret_key=settings.session_secret,
+    max_age=1209600,  # 14 days
+    same_site="none",  # Allow cross-domain cookies
+    https_only=True    # Required for same_site="none"
 )
 
 # Add CORS middleware
