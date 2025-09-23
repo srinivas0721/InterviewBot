@@ -1,0 +1,53 @@
+modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
+[agent]
+expertMode = true
+integrations = ["javascript_mem_db:1.0.0", "javascript_gemini:1.0.0", "javascript_database:1.0.0", "javascript_sendgrid:1.0.0"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["bash", "libxcrypt"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Full Stack App"
+
+[[workflows.workflow]]
+name = "Full Stack App"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash -c \"python start_fastapi.py & npx vite & wait\""
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
+[[ports]]
+localPort = 40521
+externalPort = 3001
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["npm", "start"]
+build = ["npm", "run", "build"]
