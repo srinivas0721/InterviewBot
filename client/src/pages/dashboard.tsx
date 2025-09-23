@@ -85,9 +85,9 @@ export default function Dashboard() {
       });
       
       if (response.ok) {
-        // Clear the auth cache and redirect
-        queryClient.clear();
-        setLocation("/login");
+        // Immediately set auth state to null to force unauthenticated state
+        queryClient.setQueryData(["/api/auth/user"], null);
+        setLocation("/");
       }
     } catch (error) {
       console.error("Logout failed:", error);
@@ -102,9 +102,9 @@ export default function Dashboard() {
       });
       
       if (response.ok) {
-        // Clear the auth cache and redirect
-        queryClient.clear();
-        setLocation("/login");
+        // Immediately set auth state to null to force unauthenticated state
+        queryClient.setQueryData(["/api/auth/user"], null);
+        setLocation("/");
       } else {
         console.error("Failed to delete account");
       }
@@ -143,11 +143,12 @@ export default function Dashboard() {
                   <Button variant="ghost" className="flex items-center space-x-2">
                     <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                       <span className="text-primary-foreground text-sm font-medium">
-                        {user?.firstName?.[0]}{user?.lastName?.[0]}
+                        {(user?.firstName?.[0] || user?.username?.[0] || user?.email?.[0])?.toUpperCase()}
+                        {user?.lastName?.[0]?.toUpperCase() || ''}
                       </span>
                     </div>
                     <span className="text-sm font-medium">
-                      {user?.firstName} {user?.lastName}
+                      {(user?.firstName && user?.lastName) ? `${user.firstName} ${user.lastName}` : user?.username}
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </Button>
@@ -204,7 +205,7 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">
-            Welcome back, <span data-testid="text-user-name">{user?.firstName}!</span>
+            Welcome back, <span data-testid="text-user-name">{user?.firstName || user?.username}!</span>
           </h1>
           <p className="mt-2 text-muted-foreground">Ready to practice your interview skills?</p>
         </div>
