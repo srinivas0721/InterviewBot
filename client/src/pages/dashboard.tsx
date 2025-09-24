@@ -205,7 +205,7 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">
-            Welcome back, <span data-testid="text-user-name">{user?.firstName || user?.username}!</span>
+            Welcome back, <span data-testid="text-user-name">{user?.username}!</span>
           </h1>
           <p className="mt-2 text-muted-foreground">Ready to practice your interview skills?</p>
         </div>
