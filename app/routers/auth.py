@@ -55,7 +55,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     
     return user
 
-@router.post("/signup", response_model=AuthResponse)
+@router.post("/signup", response_model=AuthResponse, response_model_by_alias=True)
 async def signup(user_data: UserCreate, request: Request, db: Session = Depends(get_db)):
     """User registration"""
     try:
@@ -81,7 +81,7 @@ async def signup(user_data: UserCreate, request: Request, db: Session = Depends(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Signup failed: {str(e)}")
 
-@router.post("/login", response_model=AuthResponse)
+@router.post("/login", response_model=AuthResponse, response_model_by_alias=True)
 async def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)):
     """User authentication"""
     try:
@@ -97,7 +97,9 @@ async def login(login_data: UserLogin, request: Request, db: Session = Depends(g
         # Set session
         request.session["user_id"] = str(user.id)
         
-        return AuthResponse(user=UserResponse.model_validate(user))
+        response = AuthResponse(user=UserResponse.model_validate(user))
+        print(f"🔍 LOGIN RESPONSE: {response.model_dump(by_alias=True)}")
+        return response
         
     except HTTPException:
         raise
@@ -110,12 +112,12 @@ async def logout(request: Request):
     request.session.clear()
     return MessageResponse(message="Logged out successfully")
 
-@router.get("/user", response_model=UserResponse)
+@router.get("/user", response_model=UserResponse, response_model_by_alias=True)
 async def get_user(current_user: User = Depends(get_current_user)):
     """Get current user profile"""
     return UserResponse.model_validate(current_user)
 
-@router.put("/profile", response_model=UserResponse)
+@router.put("/profile", response_model=UserResponse, response_model_by_alias=True)
 async def update_profile(
     profile_data: UserUpdate, 
     current_user: User = Depends(get_current_user), 
@@ -124,7 +126,7 @@ async def update_profile(
     """Update user profile"""
     try:
         # Update user profile
-        for attr, value in profile_data.model_dump().items():
+        for attr, value in profile_data.model_dump(by_alias=False).items():
             setattr(current_user, attr, value)
         
         db.commit()

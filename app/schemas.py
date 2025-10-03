@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, ConfigDict
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
@@ -27,12 +27,12 @@ class AnswerType(str, Enum):
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3)
     email: EmailStr
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    profile_image_url: Optional[str] = None
-    experience_level: Optional[ExperienceLevel] = None
-    target_companies: List[str] = Field(default_factory=list)
-    target_roles: List[str] = Field(default_factory=list)
+    first_name: Optional[str] = Field(None, alias="firstName")
+    last_name: Optional[str] = Field(None, alias="lastName")
+    profile_image_url: Optional[str] = Field(None, alias="profileImageUrl")
+    experience_level: Optional[ExperienceLevel] = Field(None, alias="experienceLevel")
+    target_companies: List[str] = Field(default_factory=list, alias="targetCompanies")
+    target_roles: List[str] = Field(default_factory=list, alias="targetRoles")
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6)
@@ -51,33 +51,12 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     id: uuid.UUID
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
 
     class Config:
         from_attributes = True
         populate_by_name = True
-        
-    def model_dump(self, **kwargs):
-        data = super().model_dump(**kwargs)
-        # Convert snake_case to camelCase for frontend compatibility
-        if 'experience_level' in data:
-            data['experienceLevel'] = data.pop('experience_level')
-        if 'target_companies' in data:
-            data['targetCompanies'] = data.pop('target_companies')
-        if 'target_roles' in data:
-            data['targetRoles'] = data.pop('target_roles')
-        if 'first_name' in data:
-            data['firstName'] = data.pop('first_name')
-        if 'last_name' in data:
-            data['lastName'] = data.pop('last_name')
-        if 'profile_image_url' in data:
-            data['profileImageUrl'] = data.pop('profile_image_url')
-        if 'created_at' in data:
-            data['createdAt'] = data.pop('created_at')
-        if 'updated_at' in data:
-            data['updatedAt'] = data.pop('updated_at')
-        return data
 
 # Interview Session schemas
 class InterviewSessionBase(BaseModel):
