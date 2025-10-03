@@ -86,7 +86,7 @@ export default function Dashboard() {
       
       if (response.ok) {
         queryClient.setQueryData(["/api/auth/user"], null);
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
         setLocation("/");
       }
     } catch (error) {
@@ -103,7 +103,7 @@ export default function Dashboard() {
       
       if (response.ok) {
         queryClient.setQueryData(["/api/auth/user"], null);
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
         setLocation("/");
       } else {
         console.error("Failed to delete account");
