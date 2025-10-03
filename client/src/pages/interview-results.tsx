@@ -321,7 +321,7 @@ Practiced with InterviewBot AI 🤖`;
   };
 
   const handleBackToDashboard = () => {
-    setLocation("/dashboard");
+    setLocation("/");
   };
 
   if (isLoading) {
