@@ -1,0 +1,10 @@
+{
+    "routes": [
+      {
+        "handle": "rewrite",
+        "source": "/*",
+        "destination": "/index.html"
+      }
+    ]
+  }
+  
