@@ -87,7 +87,7 @@ export default function Dashboard() {
       if (response.ok) {
         // Clear the auth cache and redirect
         queryClient.clear();
-        setLocation("/login");
+        setLocation("/");
       }
     } catch (error) {
       console.error("Logout failed:", error);
@@ -104,7 +104,7 @@ export default function Dashboard() {
       if (response.ok) {
         // Clear the auth cache and redirect
         queryClient.clear();
-        setLocation("/login");
+        setLocation("/");
       } else {
         console.error("Failed to delete account");
       }
