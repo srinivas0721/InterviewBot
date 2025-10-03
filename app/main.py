@@ -25,8 +25,8 @@ app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.session_secret,
     max_age=1209600,  # 14 days
-    same_site="none",  # Allow cross-domain cookies
-    https_only=True    # Required for same_site="none"
+    same_site="lax",  
+    https_only=True   # ✅ secure cookies in production
 )
 
 # Add CORS middleware
@@ -136,7 +136,7 @@ if os.path.exists("dist/public"):
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         # Don't intercept API routes
-        if full_path.startswith("api/"):
+        if full_path.startswith("api"):
             raise HTTPException(status_code=404, detail="API endpoint not found")
         
         # Serve index.html for all other routes (let React router handle them)
@@ -144,4 +144,4 @@ if os.path.exists("dist/public"):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=5000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=5000)  # ✅ no reload in prod
