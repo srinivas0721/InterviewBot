@@ -85,9 +85,8 @@ export default function Dashboard() {
       });
       
       if (response.ok) {
-        // Clear the auth cache and redirect
         queryClient.clear();
-        setLocation("/");
+        window.location.href = "/";
       }
     } catch (error) {
       console.error("Logout failed:", error);
@@ -102,9 +101,8 @@ export default function Dashboard() {
       });
       
       if (response.ok) {
-        // Clear the auth cache and redirect
         queryClient.clear();
-        setLocation("/");
+        window.location.href = "/";
       } else {
         console.error("Failed to delete account");
       }
