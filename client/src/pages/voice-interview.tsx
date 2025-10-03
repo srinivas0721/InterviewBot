@@ -466,7 +466,7 @@ export default function VoiceInterview() {
       videoStream.getTracks().forEach(track => track.stop());
       setVideoStream(null);
     }
-    setLocation("/dashboard");
+    setLocation("/");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {

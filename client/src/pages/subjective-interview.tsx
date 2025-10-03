@@ -164,7 +164,7 @@ export default function SubjectiveInterview() {
 
 
   const handleExit = () => {
-    setLocation("/dashboard");
+    setLocation("/");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {
