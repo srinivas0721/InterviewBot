@@ -24,10 +24,11 @@ app = FastAPI(
 app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.session_secret,
-    max_age=1209600,  # 14 days
-    same_site="lax",  
-    https_only=True   # ✅ secure cookies in production
+    max_age=1209600,   # 14 days
+    same_site="none",  # Required for cross-domain frontend/backend
+    https_only=True    # Render uses HTTPS, required with SameSite=None
 )
+
 
 # Add CORS middleware
 app.add_middleware(
