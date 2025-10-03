@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 import { 
   Bot, 
   Bell, 
@@ -79,16 +80,10 @@ export default function Dashboard() {
 
   const handleLogout = async () => {
     try {
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-      
-      if (response.ok) {
-        queryClient.setQueryData(["/api/auth/user"], null);
-        queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
-        setLocation("/");
-      }
+      await apiRequest("POST", "/api/auth/logout");
+      queryClient.setQueryData(["/api/auth/user"], null);
+      queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
+      setLocation("/");
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -96,18 +91,10 @@ export default function Dashboard() {
 
   const handleDeleteAccount = async () => {
     try {
-      const response = await fetch("/api/auth/account", {
-        method: "DELETE",
-        credentials: "include",
-      });
-      
-      if (response.ok) {
-        queryClient.setQueryData(["/api/auth/user"], null);
-        queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
-        setLocation("/");
-      } else {
-        console.error("Failed to delete account");
-      }
+      await apiRequest("DELETE", "/api/auth/account");
+      queryClient.setQueryData(["/api/auth/user"], null);
+      queryClient.removeQueries({ queryKey: ["/api/auth/user"] });
+      setLocation("/");
     } catch (error) {
       console.error("Delete account failed:", error);
     }
