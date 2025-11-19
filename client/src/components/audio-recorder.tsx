@@ -56,8 +56,17 @@ export const AudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = false;
+      recognitionRef.current.interimResults = true; // Changed to true for live transcription
       recognitionRef.current.lang = 'en-US';
+      recognitionRef.current.maxAlternatives = 1;
+      console.log('Speech recognition initialized successfully');
+    } else {
+      console.warn('Speech recognition not supported in this browser');
+      toast({
+        title: "Speech Recognition Not Available",
+        description: "Live transcription will not be available. Your recordings will still work.",
+        variant: "default",
+      });
     }
 
     // Listen for force cleanup event (when user navigates away)
@@ -160,7 +169,13 @@ export const AudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
       setIsPaused(false);
 
       // Start speech recognition for live transcript
+      console.log('Starting speech recognition...');
       startSpeechRecognition();
+
+      toast({
+        title: "Recording Started",
+        description: "Speak clearly into your microphone. Live transcription is active.",
+      });
 
       // Start recording timer
       recordingIntervalRef.current = setInterval(() => {
@@ -404,57 +419,68 @@ export const AudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
   }));
 
   const startSpeechRecognition = () => {
-    if (recognitionRef.current) {
+    if (!recognitionRef.current) {
+      console.warn('Speech recognition not initialized');
+      return;
+    }
+
+    try {
       // Stop any existing recognition first
-      try {
-        if (recognitionRef.current.state === 'listening') {
-          recognitionRef.current.stop();
+      if (recognitionRef.current.state === 'listening') {
+        console.log('Stopping existing recognition before starting new one');
+        recognitionRef.current.stop();
+      }
+    } catch (error) {
+      console.log('Error stopping previous recognition:', error);
+    }
+    
+    // Set up fresh recognition with clean state for optimal performance
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = true;
+    recognitionRef.current.lang = 'en-US';
+    recognitionRef.current.maxAlternatives = 1;
+    
+    let segmentFinalTranscript = '';
+    
+    recognitionRef.current.onstart = () => {
+      console.log('Speech recognition started and listening...');
+    };
+    
+    recognitionRef.current.onresult = (event: any) => {
+      console.log('Speech recognition result received', event);
+      let interimTranscript = '';
+      let newFinalText = '';
+      
+      // Process only new results since last update
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        console.log(`Result ${i}: ${transcript} (final: ${event.results[i].isFinal})`);
+        
+        if (event.results[i].isFinal) {
+          newFinalText += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
         }
-      } catch (error) {
-        console.log('Error stopping previous recognition:', error);
       }
       
-      // Set up fresh recognition with clean state for optimal performance
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
+      // Add new final text to segment transcript
+      if (newFinalText.trim()) {
+        segmentFinalTranscript += newFinalText;
+        console.log('Updated segment transcript:', segmentFinalTranscript);
+      }
       
-      // Performance optimizations for better responsiveness
-      recognitionRef.current.maxAlternatives = 1; // Reduce processing overhead
-      recognitionRef.current.serviceURI = undefined; // Use default Google service for best performance
+      // Display: accumulated final text + current interim text (in gray)
+      const displayText = (segmentFinalTranscript + interimTranscript).trim();
+      setCurrentSegmentTranscript(displayText);
       
-      let segmentFinalTranscript = '';
-      
-      recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = '';
-        let newFinalText = '';
-        
-        // Process only new results since last update
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            newFinalText += event.results[i][0].transcript + ' ';
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        // Add new final text to segment transcript
-        if (newFinalText.trim()) {
-          segmentFinalTranscript += newFinalText;
-        }
-        
-        // Display: accumulated final text + current interim text (in gray)
-        const displayText = (segmentFinalTranscript + interimTranscript).trim();
-        setCurrentSegmentTranscript(displayText);
-        
-        // Notify parent component of live transcript update with debouncing for performance
-        if (onLiveTranscript) {
-          // Use requestAnimationFrame for smooth UI updates
-          requestAnimationFrame(() => {
-            onLiveTranscript(accumulatedTranscript, displayText);
-          });
-        }
-      };
+      // Notify parent component of live transcript update with debouncing for performance
+      if (onLiveTranscript) {
+        // Use requestAnimationFrame for smooth UI updates
+        requestAnimationFrame(() => {
+          onLiveTranscript(accumulatedTranscript, displayText);
+        });
+      }
+    };
 
       recognitionRef.current.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
@@ -478,11 +504,16 @@ export const AudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
         }
       };
 
-      try {
-        recognitionRef.current.start();
-      } catch (error) {
-        console.log('Recognition start error:', error);
-      }
+    try {
+      recognitionRef.current.start();
+      console.log('Speech recognition start() called successfully');
+    } catch (error) {
+      console.error('Recognition start error:', error);
+      toast({
+        title: "Speech Recognition Error",
+        description: "Could not start live transcription. Recording will still work.",
+        variant: "default",
+      });
     }
   };
 
