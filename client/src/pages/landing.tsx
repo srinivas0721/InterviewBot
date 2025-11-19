@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import AuthModal from "@/components/auth-modal";
+import {AuthModal} from "@/components/auth-modal";
 import { Sparkles, Brain, TrendingUp, Award, Zap, Target, CheckCircle2, ArrowRight, Video, MessageSquare, BarChart3 } from "lucide-react";
 
 export default function Landing() {
