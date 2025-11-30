@@ -111,6 +111,27 @@ async def get_user_sessions(
     
     return [InterviewSessionResponse.model_validate(session) for session in sessions]
 
+# IMPORTANT: Define /sessions/recent BEFORE /sessions/{session_id} to avoid route conflicts
+@router.get("/sessions/recent")
+async def get_recent_completed_sessions(
+    limit: int = 5,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get only completed sessions for recent sessions list"""
+    sessions = db.query(InterviewSession)\
+        .filter(
+            InterviewSession.user_id == current_user.id,
+            InterviewSession.status == "completed"  # Only completed sessions
+        )\
+        .order_by(InterviewSession.completed_at.desc())\
+        .limit(limit)\
+        .all()
+    
+    return {
+        "sessions": [InterviewSessionResponse.model_validate(session) for session in sessions]
+    }
+
 @router.get("/sessions/{session_id}", response_model=InterviewSessionResponse)
 async def get_interview_session(
     session_id: str,
@@ -916,27 +937,6 @@ async def terminate_incomplete_session(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to terminate session: {str(e)}")
-
-
-@router.get("/sessions/recent")
-async def get_recent_completed_sessions(
-    limit: int = 5,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get only completed sessions for recent sessions list"""
-    sessions = db.query(InterviewSession)\
-        .filter(
-            InterviewSession.user_id == current_user.id,
-            InterviewSession.status == "completed"  # Only completed sessions
-        )\
-        .order_by(InterviewSession.completed_at.desc())\
-        .limit(limit)\
-        .all()
-    
-    return {
-        "sessions": [InterviewSessionResponse.model_validate(session) for session in sessions]
-    }
 
 
 @router.patch("/sessions/{session_id}/abandon")
