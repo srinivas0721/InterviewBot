@@ -12,6 +12,13 @@ import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { X } from "lucide-react";
 import type { Question, Answer } from "@/lib/types";
+import { FullscreenMonitor, getFullscreenInitialMessage, getFullscreenWarningMessage, getFullscreenTerminationMessage } from '@/lib/fullscreenMonitor';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface InterviewSession {
   id: string;
@@ -32,13 +39,52 @@ export default function SubjectiveInterview() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const [fullscreenMonitor] = useState(() => new FullscreenMonitor({
+    maxExits: 3,
+    warningTimeout: 30000,
+    onWarning: (exitsRemaining) => {
+      toast({
+        title: "⚠️ Fullscreen Warning",
+        description: getFullscreenWarningMessage(exitsRemaining, 30),
+        variant: "destructive",
+        duration: 10000
+      });
+    },
+    onTimeout: () => {
+      toast({
+        title: "⏰ Timeout",
+        description: "You didn't return to fullscreen in time!",
+        variant: "destructive"
+      });
+    },
+    onSessionTerminated: async () => {
+      if (sessionId) {
+        try {
+          await apiRequest("DELETE", `/api/interviews/sessions/${sessionId}/terminate`);
+        } catch (error) {
+          console.error("Failed to terminate session:", error);
+        }
+      }
+      toast({
+        title: "🚨 Session Terminated",
+        description: getFullscreenTerminationMessage(),
+        variant: "destructive",
+        duration: 8000
+      });
+      setTimeout(() => setLocation("/dashboard"), 3000);
+    }
+  }));
+
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(false);
+  const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
+
   // Get user data for profile preferences
   const { data: userData } = useQuery<any>({
     queryKey: ["/api/auth/user"],
   });
 
-  // Timer for each question (90 seconds)
-  const { timeLeft, isRunning, start, reset, isWarning } = useTimer(90, () => {
+  // Timer for each question (300 seconds = 5 minutes)
+  const { timeLeft, isRunning, start, reset, isWarning } = useTimer(300, () => {
     // Auto-submit when time runs out
     if (textAnswer.trim()) {
       handleSubmitAnswer();
@@ -69,7 +115,7 @@ export default function SubjectiveInterview() {
     },
     onSuccess: (data) => {
       setSessionId(data.session.id);
-      start(); // Start timer for first question
+      // Don't start timer yet - wait for fullscreen
     },
     onError: (error) => {
       toast({
@@ -119,6 +165,7 @@ export default function SubjectiveInterview() {
       return response.json();
     },
     onSuccess: () => {
+      fullscreenMonitor.stop();
       setLocation(`/interview/${sessionId}/results`);
     },
     onError: (error) => {
@@ -135,13 +182,46 @@ export default function SubjectiveInterview() {
     createSessionMutation.mutate();
   }, []);
 
+  // Show fullscreen prompt when session is ready
+  useEffect(() => {
+    if (sessionId && !hasStartedFullscreen && !createSessionMutation.isPending && !isLoadingQuestions) {
+      const questions = (questionsData as { questions: Question[] })?.questions || [];
+      if (questions.length > 0) {
+        setShowFullscreenPrompt(true);
+      }
+    }
+  }, [sessionId, hasStartedFullscreen, createSessionMutation.isPending, isLoadingQuestions, questionsData]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      fullscreenMonitor.stop();
+    };
+  }, [fullscreenMonitor]);
+
   const questions: Question[] = (questionsData as { questions: Question[] })?.questions || [];
   const currentQuestion = questions[currentQuestionIndex];
+
+  const handleStartFullscreen = async () => {
+    const success = await fullscreenMonitor.requestFullscreen();
+    if (success) {
+      setShowFullscreenPrompt(false);
+      setHasStartedFullscreen(true);
+      fullscreenMonitor.start();
+      start(); // Start the timer
+    } else {
+      toast({
+        title: "Fullscreen Required",
+        description: "Please allow fullscreen access to continue with the interview",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleSubmitAnswer = () => {
     if (!textAnswer.trim() || !currentQuestion) return;
 
-    const timeSpent = 90 - timeLeft;
+    const timeSpent = 300 - timeLeft;
     submitAnswerMutation.mutate({
       questionId: currentQuestion.id,
       answer: textAnswer,
@@ -154,17 +234,25 @@ export default function SubjectiveInterview() {
     
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
-      reset(90);
+      reset(300);
       start();
     } else {
       // Interview complete
+      fullscreenMonitor.stop();
       completeInterviewMutation.mutate();
     }
   };
 
-
-  const handleExit = () => {
-    setLocation("/");
+  const handleExit = async () => {
+    fullscreenMonitor.stop();
+    if (sessionId) {
+      try {
+        await apiRequest("PATCH", `/api/interviews/sessions/${sessionId}/abandon`);
+      } catch (error) {
+        console.error("Failed to abandon session:", error);
+      }
+    }
+    setLocation("/dashboard");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {
@@ -227,6 +315,33 @@ export default function SubjectiveInterview() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Fullscreen Prompt Dialog */}
+      {showFullscreenPrompt && (
+        <AlertDialog open={showFullscreenPrompt}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogTitle className="text-2xl font-bold">
+              📢 Fullscreen Mode Required
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-lg leading-relaxed space-y-4">
+              <p className="text-foreground">{getFullscreenInitialMessage()}</p>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mt-4">
+                <p className="text-sm text-yellow-900 dark:text-yellow-100">
+                  <strong>Important:</strong> If you exit fullscreen 3 times, your interview will be automatically terminated and all progress will be lost.
+                </p>
+              </div>
+            </AlertDialogDescription>
+            <div className="flex justify-end space-x-4 mt-6">
+              <Button variant="outline" onClick={handleExit}>
+                Cancel Interview
+              </Button>
+              <Button onClick={handleStartFullscreen} className="btn-gradient">
+                Start in Fullscreen Mode
+              </Button>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -311,7 +426,6 @@ export default function SubjectiveInterview() {
             </div>
           </CardContent>
         </Card>
-
       </div>
     </div>
   );

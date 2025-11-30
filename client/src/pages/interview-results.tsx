@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
+import { downloadPDFReport } from "@/lib/pdfGenerator";
 import { 
   Trophy, 
   Star, 
@@ -35,7 +36,8 @@ import {
   Award,
   Brain,
   ChevronRight,
-  Info
+  Info,
+  Loader2
 } from "lucide-react";
 
 interface InterviewSession {
@@ -171,51 +173,34 @@ export default function InterviewResults() {
     },
   });
 
-  // Download report mutation
-  const downloadReportMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("GET", `/api/interviews/${sessionId}/report`);
-      return response.json();
-    },
-    onSuccess: (data) => {
-      // Create blob from HTML and trigger download
-      if (!data?.reportUrl) {
-        toast({
-          title: "Download failed",
-          description: "Report data is not available. Please try again.",
-          variant: "destructive",
-        });
-        return;
-      }
+  // Download report mutation - NOW GENERATES PDF
+  const [isDownloading, setIsDownloading] = useState(false);
+  
+  const handleDownloadReport = async () => {
+    try {
+      setIsDownloading(true);
       
-      const htmlContent = decodeURIComponent(data.reportUrl.replace('data:text/html;charset=utf-8,', ''));
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
+      // Get detailed answers for PDF
+      const detailedResponse = await apiRequest("GET", `/api/interviews/${sessionId}/detailed-answers`);
+      const detailedData = await detailedResponse.json();
       
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `interview-report-${sessionId}.html`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Generate and download PDF
+      await downloadPDFReport(results, detailedData.detailed_results || []);
       
       toast({
-        title: "Report downloaded",
-        description: "Your interview report has been downloaded successfully.",
+        title: "✅ PDF Report Generated",
+        description: "Your PDF report is being prepared. A print dialog will open.",
       });
-    },
-    onError: (error) => {
+    } catch (error) {
+      console.error("PDF generation error:", error);
       toast({
-        title: "Download failed",
-        description: error.message,
-        variant: "destructive",
+        title: "❌ PDF Generation Failed",
+        description: "Could not generate PDF report. Please try again.",
+        variant: "destructive"
       });
-    },
-  });
-
-  const handleDownloadReport = () => {
-    downloadReportMutation.mutate();
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // Share/unshare interview mutation
@@ -933,13 +918,13 @@ Practiced with InterviewBot AI 🤖`;
                             </div>
                           </div>
 
-                          {/* Score Breakdown */}
+                          {/* Score Breakdown - FIX NULL SCORES */}
                           <div>
-                            <h4 className="font-semibold text-foreground mb-3">Score: {item.answer.score.toFixed(1)}/10</h4>
+                            <h4 className="font-semibold text-foreground mb-3">Score: {item.answer.score?.toFixed(1) || 'N/A'}/10</h4>
                             {item.answer.evaluationDetails && (
                               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                                 {Object.entries(item.answer.evaluationDetails).map(([criteria, score]) => (
-                                  score !== undefined && (
+                                  (score !== undefined && score !== null) && (
                                     <div key={criteria} className="text-center">
                                       <div className="text-sm text-muted-foreground capitalize mb-1">
                                         {criteria}
@@ -948,7 +933,7 @@ Practiced with InterviewBot AI 🤖`;
                                         score >= 7 ? 'text-green-600' : 
                                         score >= 5 ? 'text-yellow-600' : 'text-red-600'
                                       }`}>
-                                        {score}/10
+                                        {score.toFixed(1)}/10
                                       </div>
                                     </div>
                                   )
@@ -957,11 +942,11 @@ Practiced with InterviewBot AI 🤖`;
                             )}
                           </div>
 
-                          {/* Feedback */}
+                          {/* Feedback - WITH YELLOW BACKGROUND */}
                           <div>
                             <h4 className="font-semibold text-foreground mb-2">Feedback:</h4>
-                            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-3">
-                              <p className="text-foreground">{item.answer.feedback}</p>
+                            <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-lg p-4 shadow-sm">
+                              <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.feedback}</p>
                             </div>
                           </div>
                         </div>
@@ -1007,12 +992,21 @@ Practiced with InterviewBot AI 🤖`;
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Button
                 onClick={handleDownloadReport}
-                disabled={downloadReportMutation.isPending}
+                disabled={isDownloading}
                 className="flex items-center justify-center"
                 data-testid="button-download-report"
               >
-                <Download className="h-4 w-4 mr-2" />
-                {downloadReportMutation.isPending ? "Generating..." : "Download HTML"}
+                {isDownloading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </>
+                )}
               </Button>
               
               <Button

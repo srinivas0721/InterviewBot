@@ -331,11 +331,10 @@ export default function Landing() {
       </footer>
 
       {/* Auth Modal */}
-      <AuthModal
-        isOpen={showAuth}
-        onClose={() => setShowAuth(false)}
-        initialMode={authMode}   // <-- REQUIRED so the correct tab opens
-        onSuccess={() => {}}     // optional
+      <AuthModal 
+        isOpen={showAuth} 
+        onClose={() => setShowAuth(false)} 
+        initialMode={authMode}
       />
     </div>
   );

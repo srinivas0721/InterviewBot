@@ -162,7 +162,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   <Label htmlFor="signup-firstName">First Name</Label>
                   <Input
                     id="signup-firstName"
-                    placeholder="srini"
+                    placeholder="John"
                     data-testid="input-signup-firstName"
                     {...signupForm.register("firstName")}
                   />
@@ -193,7 +193,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                 <Label htmlFor="signup-username">Username</Label>
                 <Input
                   id="signup-username"
-                  placeholder="srinivas prabhu"
+                  placeholder="johndoe"
                   data-testid="input-signup-username"
                   {...signupForm.register("username")}
                 />
@@ -209,7 +209,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                 <Input
                   id="signup-email"
                   type="email"
-                  placeholder="srinivas@example.com"
+                  placeholder="john@example.com"
                   data-testid="input-signup-email"
                   {...signupForm.register("email")}
                 />

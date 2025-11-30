@@ -12,6 +12,13 @@ import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { X, Brain } from "lucide-react";
 import type { Question, Answer } from "@/lib/types";
+import { FullscreenMonitor, getFullscreenInitialMessage, getFullscreenWarningMessage, getFullscreenTerminationMessage } from '@/lib/fullscreenMonitor';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface InterviewSession {
   id: string;
@@ -29,9 +36,50 @@ export default function VoiceInterview() {
   const [showProcessing, setShowProcessing] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [transcript, setTranscript] = useState<string>("");
+  const transcriptRef = useRef<string>(""); // Keep ref for immediate access
   const [liveAccumulatedTranscript, setLiveAccumulatedTranscript] = useState<string>("");
   const [liveCurrentTranscript, setLiveCurrentTranscript] = useState<string>("");
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  
+  // Fullscreen monitoring
+  const [fullscreenMonitor] = useState(() => new FullscreenMonitor({
+    maxExits: 3,
+    warningTimeout: 30000,
+    onWarning: (exitsRemaining) => {
+      toast({
+        title: "⚠️ Fullscreen Warning",
+        description: getFullscreenWarningMessage(exitsRemaining, 30),
+        variant: "destructive",
+        duration: 10000
+      });
+    },
+    onTimeout: () => {
+      toast({
+        title: "⏰ Timeout",
+        description: "You didn't return to fullscreen in time!",
+        variant: "destructive"
+      });
+    },
+    onSessionTerminated: async () => {
+      if (sessionId) {
+        try {
+          await apiRequest("DELETE", `/api/interviews/sessions/${sessionId}/terminate`);
+        } catch (error) {
+          console.error("Failed to terminate session:", error);
+        }
+      }
+      toast({
+        title: "🚨 Session Terminated",
+        description: getFullscreenTerminationMessage(),
+        variant: "destructive",
+        duration: 8000
+      });
+      setTimeout(() => setLocation("/dashboard"), 3000);
+    }
+  }));
+
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(false);
+  const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -298,30 +346,93 @@ export default function VoiceInterview() {
 
   // Timer for each question (180 seconds = 3 minutes)
   const { timeLeft, isRunning, start, reset, isWarning } = useTimer(180, () => {
-    // Two-step process: pause recording first, then finish automatically
+    console.log('⏰ Timer expired!');
+    console.log('Recording state:', audioRecorderRef.current?.isRecording);
+    console.log('Paused state:', audioRecorderRef.current?.isPaused);
+    console.log('Current transcript (ref):', transcriptRef.current);
+    console.log('Current transcript (state):', transcript);
+    
+    // When timer runs out, we need to handle different scenarios:
+    
     if (audioRecorderRef.current?.isRecording) {
-      // Step 1: Pause the recording first
+      // Scenario 1: Still recording - pause first, then finish
+      console.log('Scenario 1: Still recording - pausing then finishing');
       audioRecorderRef.current.pauseRecording();
+      
       toast({
-        title: "Time's up!",
-        description: "Recording paused. Finishing automatically...",
+        title: "⏰ Time's up!",
+        description: "Finalizing your recording...",
         variant: "destructive",
       });
       
-      // Step 2: Finish recording after a short delay
+      // Give it 2 seconds to process, then finish and auto-submit
       setTimeout(() => {
+        console.log('Finishing recording after timeout');
         if (audioRecorderRef.current?.isPaused) {
           audioRecorderRef.current.finishRecording();
+          
+          // Wait for transcript to be set, then auto-submit
+          setTimeout(() => {
+            const finalTranscript = transcriptRef.current || transcript;
+            console.log('Auto-submitting after recording finished, transcript:', finalTranscript);
+            if (finalTranscript && finalTranscript.trim()) {
+              handleSubmitAnswer();
+            } else {
+              // No transcript - skip this question
+              toast({
+                title: "⚠️ No answer recorded",
+                description: "Moving to next question...",
+                variant: "destructive",
+              });
+              handleNextQuestion();
+            }
+          }, 1500); // Wait 1.5 seconds for transcript processing
         }
-      }, 1000); // 1 second delay to show the pause
+      }, 2000);
+      
     } else if (audioRecorderRef.current?.isPaused) {
-      // If already paused, just finish
+      // Scenario 2: Already paused - finish and submit
+      console.log('Scenario 2: Already paused - finishing');
       audioRecorderRef.current.finishRecording();
-    } else {
-      // No recording in progress, move to next question
+      
       toast({
-        title: "Time's up!",
-        description: "Moving to next question...",
+        title: "⏰ Time's up!",
+        description: "Processing your answer...",
+        variant: "destructive",
+      });
+      
+      // Wait for transcript to be processed, then submit
+      setTimeout(() => {
+        const finalTranscript = transcriptRef.current || transcript;
+        console.log('Auto-submitting paused recording, transcript:', finalTranscript);
+        if (finalTranscript && finalTranscript.trim()) {
+          handleSubmitAnswer();
+        } else {
+          toast({
+            title: "⚠️ No answer recorded",
+            description: "Moving to next question...",
+            variant: "destructive",
+          });
+          handleNextQuestion();
+        }
+      }, 1500);
+      
+    } else if (transcriptRef.current && transcriptRef.current.trim()) {
+      // Scenario 3: Recording finished but not submitted yet - auto-submit
+      console.log('Scenario 3: Has transcript, auto-submitting');
+      toast({
+        title: "⏰ Time's up!",
+        description: "Submitting your answer...",
+        variant: "destructive",
+      });
+      handleSubmitAnswer();
+      
+    } else {
+      // Scenario 4: No recording at all - skip question
+      console.log('Scenario 4: No recording, skipping');
+      toast({
+        title: "⏰ Time's up!",
+        description: "No answer recorded. Moving to next question...",
         variant: "destructive",
       });
       handleNextQuestion();
@@ -408,12 +519,37 @@ export default function VoiceInterview() {
     createSessionMutation.mutate();
   }, []);
 
+  // Show fullscreen prompt when session is ready
+  useEffect(() => {
+    if (sessionId && !hasStartedFullscreen && !createSessionMutation.isPending && !isLoadingQuestions) {
+      setShowFullscreenPrompt(true);
+    }
+  }, [sessionId, hasStartedFullscreen, createSessionMutation.isPending, isLoadingQuestions]);
+
   const questions: Question[] = (questionsData as any)?.questions || [];
   const currentQuestion = questions[currentQuestionIndex];
 
+  const handleStartFullscreen = async () => {
+    const success = await fullscreenMonitor.requestFullscreen();
+    if (success) {
+      setShowFullscreenPrompt(false);
+      setHasStartedFullscreen(true);
+      fullscreenMonitor.start();
+      start(); // Start the timer
+    } else {
+      toast({
+        title: "Fullscreen Required",
+        description: "Please allow fullscreen access to continue with the interview",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleRecordingComplete = (blob: Blob, transcriptText: string) => {
+    console.log('Recording complete, transcript length:', transcriptText.length);
     setAudioBlob(blob);
     setTranscript(transcriptText);
+    transcriptRef.current = transcriptText; // Update ref immediately
     toast({
       title: "Recording complete",
       description: "Your answer has been recorded successfully.",
@@ -445,6 +581,7 @@ export default function VoiceInterview() {
   const handleNextQuestion = () => {
     setAudioBlob(null);
     setTranscript("");
+    transcriptRef.current = ""; // Clear ref too
     // Clear live transcript to prevent mixing with next question
     setLiveAccumulatedTranscript("");
     setLiveCurrentTranscript("");
@@ -460,13 +597,21 @@ export default function VoiceInterview() {
   };
 
 
-  const handleExit = () => {
+  const handleExit = async () => {
+    fullscreenMonitor.stop();
     // Stop video stream when exiting
     if (videoStream) {
       videoStream.getTracks().forEach(track => track.stop());
       setVideoStream(null);
     }
-    setLocation("/");
+    if (sessionId) {
+      try {
+        await apiRequest("PATCH", `/api/interviews/sessions/${sessionId}/abandon`);
+      } catch (error) {
+        console.error("Failed to abandon session:", error);
+      }
+    }
+    setLocation("/dashboard");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {
@@ -528,7 +673,35 @@ export default function VoiceInterview() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
+      {/* Fullscreen Prompt Dialog */}
+      {showFullscreenPrompt && (
+        <AlertDialog open={showFullscreenPrompt}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogTitle className="text-2xl font-bold">
+              📢 Fullscreen Mode Required
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-lg leading-relaxed space-y-4">
+              <p>{getFullscreenInitialMessage()}</p>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mt-4">
+                <p className="text-sm text-yellow-900 dark:text-yellow-100">
+                  <strong>Important:</strong> If you exit fullscreen 3 times, your interview will be automatically terminated and all progress will be lost.
+                </p>
+              </div>
+            </AlertDialogDescription>
+            <div className="flex justify-end space-x-4 mt-6">
+              <Button variant="outline" onClick={handleExit}>
+                Cancel Interview
+              </Button>
+              <Button onClick={handleStartFullscreen} className="btn-gradient">
+                Start in Fullscreen Mode
+              </Button>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -702,6 +875,6 @@ export default function VoiceInterview() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </>
   );
 }

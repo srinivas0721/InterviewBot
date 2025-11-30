@@ -65,11 +65,17 @@ async def get_dashboard_stats(
     improvement_areas = sum(1 for cat in category_averages if cat["score"] < 7.0)
     
     # Recent sessions (last 5)
-    recent_sessions = db.query(InterviewSession)\
-        .filter(InterviewSession.user_id == current_user.id)\
-        .order_by(desc(InterviewSession.created_at))\
-        .limit(5)\
-        .all()
+    recent_sessions = (
+    db.query(InterviewSession)
+    .filter(
+        InterviewSession.user_id == current_user.id,
+        InterviewSession.status == "completed"   # ← Correct filter
+    )
+    .order_by(desc(InterviewSession.completed_at))  # ← removed stray backslash
+    .limit(5)
+    .all()
+)
+
     
     recent_sessions_data = []
     for session in recent_sessions:

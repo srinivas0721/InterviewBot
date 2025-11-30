@@ -74,6 +74,19 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
+  // Separate query for recent COMPLETED sessions only
+  const { data: recentSessionsData } = useQuery({
+    queryKey: ["/api/interviews/sessions/recent"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/interviews/sessions/recent?limit=5");
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  // Use recent sessions from new endpoint instead of stats
+  const recentSessions = recentSessionsData?.sessions || [];
+
   const startInterview = (mode: "subjective" | "voice") => {
     setLocation(`/interview/${mode}`);
   };
@@ -330,9 +343,9 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {stats?.recentSessions && stats.recentSessions.length > 0 ? (
+            {recentSessions && recentSessions.length > 0 ? (
               <div className="space-y-4">
-                {stats.recentSessions.map((session) => (
+                {recentSessions.map((session: any) => (
                   <div
                     key={session.id}
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
