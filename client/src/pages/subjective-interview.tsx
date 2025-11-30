@@ -71,7 +71,7 @@ export default function SubjectiveInterview() {
         variant: "destructive",
         duration: 8000
       });
-      setTimeout(() => setLocation("/"), 3000);
+      setTimeout(() => setLocation("/dashboard"), 3000);
     }
   }));
 
@@ -164,8 +164,12 @@ export default function SubjectiveInterview() {
       const response = await apiRequest("POST", `/api/interviews/sessions/${sessionId}/complete`);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       fullscreenMonitor.stop();
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch (e) { console.error(e); }
+      }
+      
       setLocation(`/interview/${sessionId}/results`);
     },
     onError: (error) => {
@@ -245,6 +249,9 @@ export default function SubjectiveInterview() {
 
   const handleExit = async () => {
     fullscreenMonitor.stop();
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch (e) { console.error(e); }
+    }
     if (sessionId) {
       try {
         await apiRequest("PATCH", `/api/interviews/sessions/${sessionId}/abandon`);
@@ -252,7 +259,7 @@ export default function SubjectiveInterview() {
         console.error("Failed to abandon session:", error);
       }
     }
-    setLocation("/");
+    setLocation("/dashboard");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {

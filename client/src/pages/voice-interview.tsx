@@ -74,7 +74,7 @@ export default function VoiceInterview() {
         variant: "destructive",
         duration: 8000
       });
-      setTimeout(() => setLocation("/"), 3000);
+      setTimeout(() => setLocation("/dashboard"), 3000);
     }
   }));
 
@@ -502,7 +502,15 @@ export default function VoiceInterview() {
       const response = await apiRequest("POST", `/api/interviews/sessions/${sessionId}/complete`);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      fullscreenMonitor.stop();
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch (e) { console.error(e); }
+      }
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        setVideoStream(null);
+      }
       setLocation(`/interview/${sessionId}/results`);
     },
     onError: (error) => {
@@ -599,6 +607,9 @@ export default function VoiceInterview() {
 
   const handleExit = async () => {
     fullscreenMonitor.stop();
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch (e) { console.error(e); }
+    }
     // Stop video stream when exiting
     if (videoStream) {
       videoStream.getTracks().forEach(track => track.stop());
@@ -611,7 +622,7 @@ export default function VoiceInterview() {
         console.error("Failed to abandon session:", error);
       }
     }
-    setLocation("/");
+    setLocation("/dashboard");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {
@@ -862,10 +873,12 @@ export default function VoiceInterview() {
                   <div className="w-2 h-2 bg-green-600 rounded-full mr-3"></div>
                   <span className="text-foreground">Speech-to-text conversion complete</span>
                 </div>
+
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 border-2 border-primary border-t-transparent rounded-full animate-spin mr-3"></div>
                   <span className="text-foreground">Evaluating content quality...</span>
                 </div>
+
                 <div className="flex items-center text-sm opacity-50">
                   <div className="w-2 h-2 bg-muted-foreground rounded-full mr-3"></div>
                   <span className="text-muted-foreground">Generating feedback</span>
@@ -874,8 +887,8 @@ export default function VoiceInterview() {
             </div>
           </DialogContent>
         </Dialog>
+
       </div>
-      
       </div>
     </>
   );
