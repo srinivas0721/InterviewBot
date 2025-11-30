@@ -426,24 +426,24 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {stats?.recentSessions && stats.recentSessions.length > 0 && stats.recentSessions[0]?.recommendations && stats.recentSessions[0].recommendations.length > 0 ? (
-                  stats.recentSessions[0].recommendations.map((rec: string, index: number) => (
-                    <div key={index} className="flex items-start">
-                      <div className="p-1 bg-blue-100 rounded mr-3 mt-1">
-                        <Lightbulb className="h-4 w-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="text-sm text-muted-foreground">
-                          {rec}
+                {recentSessions && recentSessions.length > 0 &&
+                  recentSessions[0]?.recommendations &&
+                  recentSessions[0].recommendations.length > 0 ? (
+                      recentSessions[0].recommendations.map((rec, index) => (
+                        <div key={index} className="flex items-start">
+                          <div className="p-1 bg-blue-100 rounded mr-3 mt-1">
+                            <Lightbulb className="h-4 w-4 text-blue-600" />
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {rec}
+                          </div>
                         </div>
-                      </div>
+                      ))
+                  ) : (
+                    <div className="text-sm text-gray-500 italic">
+                      Complete an interview to get AI-generated recommendations
                     </div>
-                  ))
-                ) : (
-                  <div className="text-sm text-gray-500 italic">
-                    Complete an interview to get AI-generated recommendations based on your performance
-                  </div>
-                )}
+                  )}
               </div>
             </CardContent>
           </Card>
