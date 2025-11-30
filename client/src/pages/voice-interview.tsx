@@ -875,6 +875,8 @@ export default function VoiceInterview() {
           </DialogContent>
         </Dialog>
       </div>
+      
+      </div>
     </>
   );
 }
