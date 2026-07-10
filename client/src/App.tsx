@@ -48,8 +48,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/share/:shareToken" component={SharedResults} />
       
-      {/* Protected routes */}
-      <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
+      {/* Protected routes — specific paths first */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/profile-setup" component={() => <ProtectedRoute component={ProfileSetup} requiresProfile={false} />} />
       <Route path="/interview/subjective" component={() => <ProtectedRoute component={SubjectiveInterview} />} />
@@ -57,6 +56,9 @@ function Router() {
       <Route path="/interview/:sessionId/results" component={() => <ProtectedRoute component={InterviewResults} />} />
       <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
       <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
+      
+      {/* Root path — must be after specific routes */}
+      <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       
       {/* Fallback */}
       <Route component={NotFound} />
