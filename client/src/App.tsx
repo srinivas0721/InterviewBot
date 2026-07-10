@@ -48,7 +48,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/share/:shareToken" component={SharedResults} />
       
-      {/* Protected routes — specific paths first */}
+      {/* Protected routes — authenticated users only, otherwise show Landing */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/profile-setup" component={() => <ProtectedRoute component={ProfileSetup} requiresProfile={false} />} />
       <Route path="/interview/subjective" component={() => <ProtectedRoute component={SubjectiveInterview} />} />
@@ -57,11 +57,11 @@ function Router() {
       <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
       <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
       
-      {/* Root path — exact match only */}
+      {/* Root — authenticated goes to dashboard, unauthenticated sees landing */}
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       
-      {/* Fallback — anything else */}
-      <Route component={NotFound} />
+      {/* Any unknown route — show landing for unauthenticated, dashboard for authenticated */}
+      <Route component={() => <ProtectedRoute component={Dashboard} />} />
     </Switch>
   );
 }
