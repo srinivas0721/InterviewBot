@@ -99,8 +99,6 @@ export default function VoiceInterview() {
   // Initialize video stream ONLY after fullscreen is active (not on mount)
   // This prevents permission issues and race conditions
   const initializeVideoStream = async () => {
-    if (videoStream) return; // Already initialized
-    
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       console.warn('MediaDevices API not available');
       return;
@@ -129,6 +127,12 @@ export default function VoiceInterview() {
 
       if (stream) {
         setVideoStream(stream);
+        // Immediately attach to video element if available
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.muted = true;
+          videoRef.current.play().catch(console.error);
+        }
       } else {
         console.log('All camera strategies failed — continuing without video');
         toast({
@@ -143,16 +147,13 @@ export default function VoiceInterview() {
     }
   };
 
-  // Ensure video element shows the stream when both are available
+  // Also connect video when the ref becomes available (component re-renders)
   useEffect(() => {
-    if (videoStream && videoRef.current && hasStartedFullscreen) {
-      console.log('Connecting stream to video element...');
+    if (videoStream && videoRef.current) {
       videoRef.current.srcObject = videoStream;
       videoRef.current.muted = true;
-      
       videoRef.current.play().catch((error) => {
         console.warn('Video autoplay failed, retrying...', error);
-        // Retry after a short delay
         setTimeout(() => {
           videoRef.current?.play().catch(console.error);
         }, 500);
