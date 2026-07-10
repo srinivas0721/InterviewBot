@@ -36,6 +36,8 @@ export default function SubjectiveInterview() {
   const [textAnswer, setTextAnswer] = useState<string>("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isResuming, setIsResuming] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, string>>({});  // Track answers per question index
+  const [submittedQuestions, setSubmittedQuestions] = useState<Set<number>>(new Set());  // Which questions were submitted
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -171,8 +173,7 @@ export default function SubjectiveInterview() {
       return response.json();
     },
     onSuccess: (data) => {
-      // Don't show feedback immediately - save it for final results
-      handleNextQuestion();
+      // Answer submitted and evaluated — nothing else to do since we already moved to next question
     },
     onError: (error) => {
       toast({
@@ -251,11 +252,33 @@ export default function SubjectiveInterview() {
     if (!textAnswer.trim() || !currentQuestion) return;
 
     const timeSpent = 300 - timeLeft;
+    
+    // Save answer locally
+    setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
+    setSubmittedQuestions(prev => new Set([...prev, currentQuestionIndex]));
+    
+    // Fire the submission (runs in background — don't wait for it)
     submitAnswerMutation.mutate({
       questionId: currentQuestion.id,
       answer: textAnswer,
       timeSpent,
     });
+
+    // Immediately move to next question (optimistic UX)
+    handleNextQuestion();
+  };
+
+  const navigateToQuestion = (index: number) => {
+    // Save current answer before navigating
+    if (textAnswer.trim()) {
+      setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
+    }
+    
+    // Navigate to the target question
+    setCurrentQuestionIndex(index);
+    setTextAnswer(answers[index] || "");
+    reset(300);
+    start();
   };
 
   const handleNextQuestion = () => {
@@ -374,11 +397,11 @@ export default function SubjectiveInterview() {
         </AlertDialog>
       )}
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Subjective Interview Session</h1>
+            <h1 className="text-2xl font-bold">Subjective Interview Session</h1>
             <p className="text-muted-foreground">
               {(() => {
                 const companies = userData?.targetCompanies || ["Google"];
@@ -401,10 +424,10 @@ export default function SubjectiveInterview() {
           </Button>
         </div>
 
-        {/* Progress */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
+        {/* Progress Bar */}
+        <Card className="glass-card mb-6">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
               <ProgressBar 
                 current={currentQuestionIndex + 1} 
                 total={questions.length} 
@@ -418,46 +441,138 @@ export default function SubjectiveInterview() {
           </CardContent>
         </Card>
 
-        {/* Question */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="mb-6">
-              <div className="inline-block bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4">
-                {currentQuestion.category}
-              </div>
-              <h2 className="text-xl font-semibold text-foreground mb-4" data-testid="question-text">
-                {currentQuestion.questionText}
-              </h2>
-            </div>
+        {/* Main Content — Two Column Layout on Large Screens */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Question & Answer (2/3 width) */}
+          <div className="lg:col-span-2">
+            <Card className="glass-card border-primary/10">
+              <CardContent className="p-6 lg:p-8">
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="category-badge">
+                      {currentQuestion.category}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Question {currentQuestionIndex + 1} of {questions.length}
+                    </span>
+                  </div>
+                  <h2 className="text-xl lg:text-2xl font-semibold text-foreground leading-relaxed" data-testid="question-text">
+                    {currentQuestion.questionText}
+                  </h2>
+                </div>
 
-            <div className="space-y-4">
-              <Label htmlFor="text-answer" className="text-sm font-medium">
-                Your Answer:
-              </Label>
-              <Textarea
-                id="text-answer"
-                value={textAnswer}
-                onChange={(e) => setTextAnswer(e.target.value)}
-                className="min-h-[120px] resize-vertical"
-                placeholder="Type your detailed answer here..."
-                data-testid="text-answer-input"
-              />
-              <p className="text-sm text-muted-foreground">
-                Provide a comprehensive answer with examples and explanations to demonstrate your knowledge.
-              </p>
-            </div>
+                <div className="space-y-4">
+                  <Label htmlFor="text-answer" className="text-sm font-medium">
+                    Your Answer:
+                  </Label>
+                  <Textarea
+                    id="text-answer"
+                    value={textAnswer}
+                    onChange={(e) => setTextAnswer(e.target.value)}
+                    className="min-h-[200px] lg:min-h-[280px] resize-vertical text-base"
+                    placeholder="Type your detailed answer here..."
+                    data-testid="text-answer-input"
+                  />
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      {textAnswer.length > 0 && <span className="text-primary font-medium">{textAnswer.split(/\s+/).filter(Boolean).length} words</span>}
+                    </p>
+                    <Button
+                      onClick={handleSubmitAnswer}
+                      disabled={!textAnswer.trim() || submitAnswerMutation.isPending}
+                      className="btn-gradient px-8"
+                      data-testid="button-submit-answer"
+                    >
+                      {submitAnswerMutation.isPending ? (
+                        <span className="flex items-center">
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span>
+                          Evaluating...
+                        </span>
+                      ) : "Submit Answer"}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-            <div className="flex justify-end items-center mt-6">
-              <Button
-                onClick={handleSubmitAnswer}
-                disabled={!textAnswer.trim() || submitAnswerMutation.isPending}
-                data-testid="button-submit-answer"
-              >
-                {submitAnswerMutation.isPending ? "Submitting..." : "Submit Answer"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Right: Sidebar with tips and question navigation (1/3 width) */}
+          <div className="lg:col-span-1 space-y-4">
+            {/* Question Navigation */}
+            <Card className="glass-card border-primary/10">
+              <CardContent className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3">Questions</h4>
+                <div className="grid grid-cols-5 gap-2">
+                  {questions.map((q: Question, idx: number) => (
+                    <button
+                      key={q.id}
+                      onClick={() => navigateToQuestion(idx)}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer hover:scale-110 ${
+                        idx === currentQuestionIndex
+                          ? "bg-primary text-white shadow-[0_0_10px_hsla(262,83%,58%,0.5)]"
+                          : submittedQuestions.has(idx)
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                          : answers[idx]
+                          ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                          : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                      }`}
+                      title={submittedQuestions.has(idx) ? "Submitted" : answers[idx] ? "Draft saved" : "Not answered"}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500/50"></span>Submitted</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-500/50"></span>Draft</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-primary"></span>Current</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Tips Panel */}
+            <Card className="glass-card border-primary/10">
+              <CardContent className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3">💡 Tips</h4>
+                <ul className="space-y-2 text-xs text-muted-foreground">
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Structure your answer: problem → approach → solution</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Include specific examples or metrics when possible</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Aim for 100-200 words per answer for best scores</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>Mention trade-offs and alternative approaches</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+
+            {/* Category Info */}
+            <Card className="glass-card border-primary/10">
+              <CardContent className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-2">Category</h4>
+                <p className="text-sm text-primary capitalize font-medium">
+                  {(currentQuestion.category || "").replace("_", " ")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {currentQuestion.category === "technical" && "Focus on accuracy, depth, and real-world examples."}
+                  {currentQuestion.category === "behavioral" && "Use the STAR method: Situation, Task, Action, Result."}
+                  {currentQuestion.category === "system_design" && "Discuss scale, trade-offs, and component interactions."}
+                  {currentQuestion.category === "domain_knowledge" && "Show understanding of core concepts and their applications."}
+                  {currentQuestion.category === "communication" && "Be clear, concise, and well-structured."}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

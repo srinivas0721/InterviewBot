@@ -158,6 +158,14 @@ if os.path.exists("dist/public"):
     # Serve static assets first
     app.mount("/assets", StaticFiles(directory="dist/public/assets"), name="assets")
     
+    # Also serve any other static files (favicon, etc.)
+    @app.get("/favicon.ico")
+    async def favicon():
+        favicon_path = "dist/public/favicon.ico"
+        if os.path.exists(favicon_path):
+            return FileResponse(favicon_path)
+        raise HTTPException(status_code=404)
+    
     # Catch-all route for SPA - serve index.html for all non-API routes
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -165,8 +173,26 @@ if os.path.exists("dist/public"):
         if full_path.startswith("api"):
             raise HTTPException(status_code=404, detail="API endpoint not found")
         
+        # Check if it's a static file that exists
+        static_path = f"dist/public/{full_path}"
+        if os.path.isfile(static_path):
+            return FileResponse(static_path)
+        
         # Serve index.html for all other routes (let React router handle them)
         return FileResponse("dist/public/index.html")
+else:
+    # No built frontend — in development mode, Vite handles the frontend.
+    # But if someone hits a non-API route directly, return a helpful message.
+    from fastapi.responses import JSONResponse
+    
+    @app.get("/{full_path:path}")
+    async def no_frontend(full_path: str):
+        if full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Frontend not built. Run 'npm run build' first, or use the Vite dev server on port 5000."}
+        )
 
 if __name__ == "__main__":
     import uvicorn
