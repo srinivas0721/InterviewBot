@@ -57,10 +57,10 @@ function Router() {
       <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
       <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
       
-      {/* Root path — must be after specific routes */}
+      {/* Root path — exact match only */}
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       
-      {/* Fallback */}
+      {/* Fallback — anything else */}
       <Route component={NotFound} />
     </Switch>
   );

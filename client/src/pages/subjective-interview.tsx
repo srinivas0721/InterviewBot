@@ -38,6 +38,7 @@ export default function SubjectiveInterview() {
   const [isResuming, setIsResuming] = useState(false);
   const [answers, setAnswers] = useState<Record<number, string>>({});  // Track answers per question index
   const [submittedQuestions, setSubmittedQuestions] = useState<Set<number>>(new Set());  // Which questions were submitted
+  const [timers, setTimers] = useState<Record<number, number>>({});  // Track remaining time per question
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -269,24 +270,34 @@ export default function SubjectiveInterview() {
   };
 
   const navigateToQuestion = (index: number) => {
-    // Save current answer before navigating
+    // Save current answer and timer before navigating
     if (textAnswer.trim()) {
       setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
     }
+    // Save remaining time for current question
+    setTimers(prev => ({ ...prev, [currentQuestionIndex]: timeLeft }));
     
     // Navigate to the target question
     setCurrentQuestionIndex(index);
     setTextAnswer(answers[index] || "");
-    reset(300);
+    
+    // Restore saved time for that question, or start fresh (300s) if never visited
+    const savedTime = timers[index] ?? 300;
+    reset(savedTime);
     start();
   };
 
   const handleNextQuestion = () => {
+    // Save timer for current question before moving
+    setTimers(prev => ({ ...prev, [currentQuestionIndex]: 0 }));  // Submitted = no time left
     setTextAnswer("");
     
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      reset(300);
+      const nextIdx = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIdx);
+      // Use saved time for next question if it was visited before, otherwise fresh 300s
+      const savedTime = timers[nextIdx] ?? 300;
+      reset(savedTime);
       start();
     } else {
       // Interview complete
