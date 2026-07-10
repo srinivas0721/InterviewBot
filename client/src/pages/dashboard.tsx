@@ -306,56 +306,46 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Resume In-Progress Sessions */}
+        {/* Resume In-Progress Sessions — compact inline banner */}
         {resumableSessions.length > 0 && (
-          <Card className="mb-8 border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20">
-            <CardHeader>
-              <CardTitle className="flex items-center text-orange-700 dark:text-orange-400">
-                <RotateCcw className="h-5 w-5 mr-2" />
-                Resume In-Progress Interview
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {resumableSessions.map((item: any) => (
-                  <div
-                    key={item.session.id}
-                    className="flex items-center justify-between p-4 bg-white dark:bg-card border rounded-lg"
+          <div className="mb-6">
+            {resumableSessions.map((item: any) => (
+              <div
+                key={item.session.id}
+                className="flex items-center justify-between p-3 px-5 rounded-xl bg-gradient-to-r from-orange-500/10 to-yellow-500/10 border border-orange-500/20"
+              >
+                <div className="flex items-center gap-3">
+                  <RotateCcw className="h-4 w-4 text-orange-400 animate-spin" style={{ animationDuration: '3s' }} />
+                  <span className="text-sm text-foreground">
+                    <span className="font-medium">{item.session.company} — {item.session.role}</span>
+                    <span className="text-muted-foreground ml-2">({item.questionsAnswered}/{item.questionsGenerated} answered)</span>
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={async () => {
+                      try {
+                        await apiRequest("PATCH", `/api/interviews/sessions/${item.session.id}/abandon`);
+                        queryClient.invalidateQueries({ queryKey: ["/api/interviews/sessions/in-progress"] });
+                      } catch (e) { console.error(e); }
+                    }}
                   >
-                    <div>
-                      <div className="font-semibold text-foreground">
-                        {item.session.company} — {item.session.role}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {item.questionsAnswered}/{item.questionsGenerated} questions answered • {item.session.mode} mode
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            await apiRequest("PATCH", `/api/interviews/sessions/${item.session.id}/abandon`);
-                            queryClient.invalidateQueries({ queryKey: ["/api/interviews/sessions/in-progress"] });
-                          } catch (e) { console.error(e); }
-                        }}
-                      >
-                        Discard
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => resumeInterview(item.session.id, item.session.mode)}
-                      >
-                        <RotateCcw className="h-4 w-4 mr-1" />
-                        Resume
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                    Discard
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="btn-gradient text-xs h-7 px-4"
+                    onClick={() => resumeInterview(item.session.id, item.session.mode)}
+                  >
+                    Resume
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            ))}
+          </div>
         )}
 
         {/* Start New Interview */}
