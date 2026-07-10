@@ -80,7 +80,7 @@ export default function VoiceInterview() {
         variant: "destructive",
         duration: 8000
       });
-      setTimeout(() => setLocation("/dashboard"), 3000);
+      setTimeout(() => setLocation("/"), 3000);
     }
   }));
 
@@ -498,7 +498,7 @@ export default function VoiceInterview() {
         console.error("Failed to abandon session:", error);
       }
     }
-    setLocation("/dashboard");
+    setLocation("/");
   };
 
   if (createSessionMutation.isPending || isLoadingQuestions) {

@@ -48,8 +48,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/share/:shareToken" component={SharedResults} />
       
-      {/* Protected routes — authenticated users only, otherwise show Landing */}
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+      {/* Protected routes */}
       <Route path="/profile-setup" component={() => <ProtectedRoute component={ProfileSetup} requiresProfile={false} />} />
       <Route path="/interview/subjective" component={() => <ProtectedRoute component={SubjectiveInterview} />} />
       <Route path="/interview/voice" component={() => <ProtectedRoute component={VoiceInterview} />} />
@@ -57,10 +56,7 @@ function Router() {
       <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
       <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
       
-      {/* Root — authenticated goes to dashboard, unauthenticated sees landing */}
-      <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
-      
-      {/* Any unknown route — show landing for unauthenticated, dashboard for authenticated */}
+      {/* Everything else — authenticated sees dashboard, unauthenticated sees landing */}
       <Route component={() => <ProtectedRoute component={Dashboard} />} />
     </Switch>
   );

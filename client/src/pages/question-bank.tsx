@@ -82,7 +82,7 @@ export default function QuestionBank() {
               {bookmarks.length} bookmarked question{bookmarks.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <Button variant="outline" onClick={() => setLocation("/dashboard")} className="glass-card border-primary/30">
+          <Button variant="outline" onClick={() => setLocation("/")} className="glass-card border-primary/30">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -98,7 +98,7 @@ export default function QuestionBank() {
               <p className="text-muted-foreground mb-6">
                 After completing an interview, click the star icon next to any question to save it here for future practice.
               </p>
-              <Button onClick={() => setLocation("/dashboard")} className="btn-gradient">
+              <Button onClick={() => setLocation("/")} className="btn-gradient">
                 Start an Interview
               </Button>
             </CardContent>

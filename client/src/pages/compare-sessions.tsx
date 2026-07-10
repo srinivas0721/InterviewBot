@@ -122,7 +122,7 @@ export default function CompareSessions() {
               Select 2-5 completed sessions to compare your progress
             </p>
           </div>
-          <Button variant="outline" onClick={() => setLocation("/dashboard")} className="glass-card border-primary/30">
+          <Button variant="outline" onClick={() => setLocation("/")} className="glass-card border-primary/30">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Dashboard
           </Button>

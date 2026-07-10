@@ -52,7 +52,7 @@ export default function ProfileSetup() {
           ? "Your preferences have been updated successfully." 
           : "Your profile has been set up successfully.",
       });
-      setLocation("/dashboard");
+      setLocation("/");
     },
     onError: (error) => {
       toast({
