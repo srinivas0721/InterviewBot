@@ -33,13 +33,14 @@ async def get_dashboard_stats(
     scores = [float(session.overall_score) for session in completed_sessions if session.overall_score]
     average_score = sum(scores) / len(scores) if scores else 0
     
-    # Calculate total time spent (sum of all answers' time_spent)
-    total_time_minutes = db.query(func.sum(Answer.time_spent))\
+    # Calculate total time spent (sum of all answers' time_spent in seconds)
+    total_time_seconds = db.query(func.sum(Answer.time_spent))\
         .filter(Answer.user_id == current_user.id)\
         .scalar() or 0
     
-    total_time_hours = total_time_minutes / 60 if total_time_minutes else 0
-    total_time_str = f"{int(total_time_hours)}h {int(total_time_minutes % 60)}m"
+    total_time_hours = total_time_seconds / 3600 if total_time_seconds else 0
+    total_time_minutes = (total_time_seconds % 3600) / 60
+    total_time_str = f"{int(total_time_hours)}h {int(total_time_minutes)}m"
     
     # Category averages
     category_scores = {}

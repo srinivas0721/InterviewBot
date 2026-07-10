@@ -1,13 +1,17 @@
 from pydantic_settings import BaseSettings
-import os
+from pydantic import Field
+
 
 class Settings(BaseSettings):
-    database_url: str = os.getenv("DATABASE_URL", "postgresql://localhost/interview_bot")
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    session_secret: str = os.getenv("SESSION_SECRET", "interview-bot-secret-key")
-    environment: str = os.getenv("NODE_ENV", "development")
-    
+    database_url: str = "postgresql://localhost/interview_bot"
+    gemini_api_key: str = ""
+    session_secret: str = "interview-bot-secret-key"
+    environment: str = Field(default="development", alias="NODE_ENV")
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
+        populate_by_name = True
+
 
 settings = Settings()

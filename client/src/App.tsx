@@ -12,6 +12,8 @@ import SubjectiveInterview from "@/pages/subjective-interview";
 import VoiceInterview from "@/pages/voice-interview";
 import InterviewResults from "@/pages/interview-results";
 import SharedResults from "@/pages/shared-results";
+import QuestionBank from "@/pages/question-bank";
+import CompareSessions from "@/pages/compare-sessions";
 
 // Protected Route wrapper to handle authentication and profile checks
 function ProtectedRoute({ component: Component, requiresProfile = true, ...props }: any) {
@@ -53,6 +55,8 @@ function Router() {
       <Route path="/interview/subjective" component={() => <ProtectedRoute component={SubjectiveInterview} />} />
       <Route path="/interview/voice" component={() => <ProtectedRoute component={VoiceInterview} />} />
       <Route path="/interview/:sessionId/results" component={() => <ProtectedRoute component={InterviewResults} />} />
+      <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
+      <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
       
       {/* Fallback */}
       <Route component={NotFound} />

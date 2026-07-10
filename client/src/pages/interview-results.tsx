@@ -95,6 +95,8 @@ interface DetailedAnswer {
     voiceTranscript?: string;
     score: number;
     feedback: string;
+    correctedAnswer?: string;
+    missingPoints?: string;
     evaluationDetails: {
       clarity?: number;
       depth?: number;
@@ -876,20 +878,37 @@ Practiced with InterviewBot AI 🤖`;
                             {(item.question.category || '').replace('_', ' ')} • {item.question.difficulty}
                           </span>
                         </div>
-                        {item.answer && (
-                          <div className="flex items-center">
-                            <span className={`text-lg font-bold mr-2 ${
-                              item.answer.score >= 7 ? 'text-green-600' : 
-                              item.answer.score >= 5 ? 'text-yellow-600' : 'text-red-600'
-                            }`}>
-                              {item.answer.score.toFixed(1)}/10
-                            </span>
-                            {item.answer.score >= 7 ? 
-                              <ThumbsUp className="h-4 w-4 text-green-600" /> : 
-                              <ThumbsDown className="h-4 w-4 text-red-600" />
-                            }
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                await apiRequest("POST", `/api/interviews/questions/${item.question.id}/bookmark`);
+                                toast({ title: "⭐ Bookmarked!", description: "Question saved to your collection." });
+                              } catch (e: any) {
+                                toast({ title: "Bookmark", description: "Already bookmarked or failed." });
+                              }
+                            }}
+                            title="Bookmark this question"
+                          >
+                            <Star className="h-4 w-4" />
+                          </Button>
+                          {item.answer && (
+                            <div className="flex items-center">
+                              <span className={`text-lg font-bold mr-2 ${
+                                item.answer.score >= 7 ? 'text-green-600' : 
+                                item.answer.score >= 5 ? 'text-yellow-600' : 'text-red-600'
+                              }`}>
+                                {item.answer.score.toFixed(1)}/10
+                              </span>
+                              {item.answer.score >= 7 ? 
+                                <ThumbsUp className="h-4 w-4 text-green-600" /> : 
+                                <ThumbsDown className="h-4 w-4 text-red-600" />
+                              }
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Question Text */}
@@ -949,6 +968,32 @@ Practiced with InterviewBot AI 🤖`;
                               <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.feedback}</p>
                             </div>
                           </div>
+
+                          {/* Missing Points */}
+                          {item.answer.missingPoints && (
+                            <div>
+                              <h4 className="font-semibold text-foreground mb-2 flex items-center">
+                                <AlertTriangle className="h-4 w-4 text-orange-500 mr-2" />
+                                Missing Points:
+                              </h4>
+                              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+                                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.missingPoints}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Corrected / Ideal Answer */}
+                          {item.answer.correctedAnswer && (
+                            <div>
+                              <h4 className="font-semibold text-foreground mb-2 flex items-center">
+                                <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                                Ideal Answer:
+                              </h4>
+                              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.correctedAnswer}</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-center py-4">

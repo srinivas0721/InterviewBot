@@ -23,6 +23,12 @@ class AnswerType(str, Enum):
     subjective = "subjective"
     voice = "voice"
 
+class DifficultyLevel(str, Enum):
+    easy = "easy"
+    medium = "medium"
+    hard = "hard"
+    adaptive = "adaptive"
+
 # Base schemas
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3)
@@ -66,6 +72,7 @@ class InterviewSessionBase(BaseModel):
 
 class InterviewSessionCreate(InterviewSessionBase):
     total_questions: int = Field(default=10, alias="totalQuestions")
+    difficulty: Optional[str] = Field(default="medium", alias="difficulty")
     
     class Config:
         populate_by_name = True
@@ -74,6 +81,7 @@ class InterviewSessionResponse(InterviewSessionBase):
     id: uuid.UUID
     user_id: uuid.UUID
     total_questions: int = 10
+    difficulty: Optional[str] = "medium"
     status: SessionStatus
     current_question: int
     overall_score: Optional[float] = None
@@ -241,8 +249,10 @@ class QuestionGenerationRequest(BaseModel):
     experience_level: ExperienceLevel
     categories: List[str]
     total_questions: int
+    difficulty: Optional[str] = "medium"
     target_companies: Optional[List[str]] = None
     target_roles: Optional[List[str]] = None
+    weak_categories: Optional[List[str]] = None
 
 class AnswerEvaluationRequest(BaseModel):
     question_text: str

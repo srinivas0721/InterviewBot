@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -22,7 +23,8 @@ import {
   LogOut,
   Trash2,
   User,
-  Settings
+  Settings,
+  RotateCcw
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -42,6 +44,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface DashboardStats {
   sessionsCompleted: number;
@@ -68,6 +77,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("medium");
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
@@ -84,11 +94,26 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
+  // Query for in-progress sessions that can be resumed
+  const { data: inProgressData } = useQuery({
+    queryKey: ["/api/interviews/sessions/in-progress"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/interviews/sessions/in-progress");
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
   // Use recent sessions from new endpoint instead of stats
   const recentSessions = recentSessionsData?.sessions || [];
+  const resumableSessions = inProgressData?.sessions || [];
 
   const startInterview = (mode: "subjective" | "voice") => {
-    setLocation(`/interview/${mode}`);
+    setLocation(`/interview/${mode}?difficulty=${selectedDifficulty}`);
+  };
+
+  const resumeInterview = (sessionId: string, mode: string) => {
+    setLocation(`/interview/${mode}?resume=${sessionId}`);
   };
 
   const handleLogout = async () => {
@@ -127,14 +152,19 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-card border-b">
+      <header className="glass-card border-b border-border/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <Bot className="h-8 w-8 text-primary mr-3" />
-              <span className="text-xl font-bold text-foreground">InterviewBot</span>
+              <div className="w-9 h-9 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center mr-3 pulse-glow">
+                <Bot className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-xl font-bold text-gradient">InterviewBot</span>
             </div>
             <div className="flex items-center space-x-4">
+              <Button variant="ghost" size="sm" onClick={() => setLocation("/question-bank")} title="Question Bank">
+                <Star className="h-5 w-5" />
+              </Button>
               <Button variant="ghost" size="sm" data-testid="button-notifications">
                 <Bell className="h-5 w-5" />
               </Button>
@@ -211,14 +241,14 @@ export default function Dashboard() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
+          <Card className="glass-card hover-lift border-primary/20">
             <CardContent className="p-6">
               <div className="flex items-center">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <Play className="h-5 w-5 text-primary" />
+                <div className="p-3 bg-gradient-to-br from-primary to-primary/60 rounded-xl pulse-glow">
+                  <Play className="h-5 w-5 text-white" />
                 </div>
                 <div className="ml-4">
-                  <div className="text-2xl font-bold text-foreground" data-testid="stat-sessions-completed">
+                  <div className="text-2xl font-bold text-gradient" data-testid="stat-sessions-completed">
                     {stats?.sessionsCompleted || 0}
                   </div>
                   <div className="text-sm text-muted-foreground">Sessions Completed</div>
@@ -227,14 +257,14 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift border-green-500/20">
             <CardContent className="p-6">
               <div className="flex items-center">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Star className="h-5 w-5 text-green-600" />
+                <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl">
+                  <Star className="h-5 w-5 text-white" />
                 </div>
                 <div className="ml-4">
-                  <div className="text-2xl font-bold text-foreground" data-testid="stat-average-score">
+                  <div className="text-2xl font-bold text-gradient" data-testid="stat-average-score">
                     {stats?.averageScore || 0}
                   </div>
                   <div className="text-sm text-muted-foreground">Average Score</div>
@@ -243,14 +273,14 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift border-orange-500/20">
             <CardContent className="p-6">
               <div className="flex items-center">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <Target className="h-5 w-5 text-orange-600" />
+                <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl">
+                  <Target className="h-5 w-5 text-white" />
                 </div>
                 <div className="ml-4">
-                  <div className="text-2xl font-bold text-foreground" data-testid="stat-improvement-areas">
+                  <div className="text-2xl font-bold text-gradient" data-testid="stat-improvement-areas">
                     {stats?.improvementAreas || 0}
                   </div>
                   <div className="text-sm text-muted-foreground">Improvement Areas</div>
@@ -259,14 +289,14 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift border-blue-500/20">
             <CardContent className="p-6">
               <div className="flex items-center">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Clock className="h-5 w-5 text-blue-600" />
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl">
+                  <Clock className="h-5 w-5 text-white" />
                 </div>
                 <div className="ml-4">
-                  <div className="text-2xl font-bold text-foreground" data-testid="stat-total-time">
+                  <div className="text-2xl font-bold text-gradient" data-testid="stat-total-time">
                     {stats?.totalTime || "0h"}
                   </div>
                   <div className="text-sm text-muted-foreground">Total Practice Time</div>
@@ -276,18 +306,86 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Resume In-Progress Sessions */}
+        {resumableSessions.length > 0 && (
+          <Card className="mb-8 border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center text-orange-700 dark:text-orange-400">
+                <RotateCcw className="h-5 w-5 mr-2" />
+                Resume In-Progress Interview
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {resumableSessions.map((item: any) => (
+                  <div
+                    key={item.session.id}
+                    className="flex items-center justify-between p-4 bg-white dark:bg-card border rounded-lg"
+                  >
+                    <div>
+                      <div className="font-semibold text-foreground">
+                        {item.session.company} — {item.session.role}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {item.questionsAnswered}/{item.questionsGenerated} questions answered • {item.session.mode} mode
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await apiRequest("PATCH", `/api/interviews/sessions/${item.session.id}/abandon`);
+                            queryClient.invalidateQueries({ queryKey: ["/api/interviews/sessions/in-progress"] });
+                          } catch (e) { console.error(e); }
+                        }}
+                      >
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => resumeInterview(item.session.id, item.session.mode)}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" />
+                        Resume
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Start New Interview */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle>Start New Interview</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Start New Interview</CardTitle>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Difficulty:</span>
+                <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                  <SelectTrigger className="w-[130px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                    <SelectItem value="adaptive">Adaptive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="border-2 hover:border-primary transition-colors cursor-pointer" onClick={() => startInterview("subjective")}>
+              <Card className="glass-card mode-card border-2 border-primary/20 hover:border-primary/50 transition-all cursor-pointer" onClick={() => startInterview("subjective")}>
                 <CardContent className="p-6">
                   <div className="flex items-center mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg mr-3">
-                      <ListChecks className="h-6 w-6 text-primary" />
+                    <div className="p-3 bg-gradient-to-br from-primary to-primary/60 rounded-xl mr-3 pulse-glow">
+                      <ListChecks className="h-6 w-6 text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground">Subjective Mode</h3>
                   </div>
@@ -299,18 +397,18 @@ export default function Dashboard() {
                       <Clock className="h-4 w-4 inline mr-1" />
                       15-20 minutes
                     </div>
-                    <Button data-testid="button-start-subjective">
+                    <Button className="btn-gradient" data-testid="button-start-subjective">
                       Start Subjective
                     </Button>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="border-2 hover:border-primary transition-colors cursor-pointer" onClick={() => startInterview("voice")}>
+              <Card className="glass-card mode-card border-2 border-secondary/20 hover:border-secondary/50 transition-all cursor-pointer" onClick={() => startInterview("voice")}>
                 <CardContent className="p-6">
                   <div className="flex items-center mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg mr-3">
-                      <Mic className="h-6 w-6 text-primary" />
+                    <div className="p-3 bg-gradient-to-br from-secondary to-secondary/60 rounded-xl mr-3 pulse-glow">
+                      <Mic className="h-6 w-6 text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground">Voice/Video Mode</h3>
                   </div>
@@ -322,7 +420,7 @@ export default function Dashboard() {
                       <Clock className="h-4 w-4 inline mr-1" />
                       25-30 minutes
                     </div>
-                    <Button data-testid="button-start-voice">
+                    <Button className="btn-secondary text-white" data-testid="button-start-voice">
                       Start Voice
                     </Button>
                   </div>
@@ -337,9 +435,14 @@ export default function Dashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Recent Sessions</CardTitle>
-              <Button variant="ghost" size="sm" data-testid="button-view-all-sessions">
-                View All
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setLocation("/compare")}>
+                  Compare
+                </Button>
+                <Button variant="ghost" size="sm" data-testid="button-view-all-sessions">
+                  View All
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

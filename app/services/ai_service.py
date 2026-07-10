@@ -29,7 +29,14 @@ class QuestionGenerationChain:
             
 Generate {total_questions} interview questions for a {experience_level} level {role} position at {company}.
 
+Difficulty Level: {difficulty}
+- easy: Basic concept questions, straightforward answers expected
+- medium: Standard interview questions requiring solid understanding  
+- hard: Advanced questions requiring deep expertise and complex problem-solving
+
 Distribute questions across these categories: {categories}
+
+{weak_area_context}
 
 {profile_context}
 
@@ -44,12 +51,12 @@ Format:
       "options": ["O(n)", "O(log n)", "O(n log n)", "O(1)"],
       "correct_answer": "b",
       "explanation": "Binary search divides the search space in half.",
-      "difficulty": "medium"
+      "difficulty": "{difficulty}"
     }},
     {{
       "category": "behavioral",
       "question_text": "Describe a challenging project you worked on.",
-      "difficulty": "medium"
+      "difficulty": "{difficulty}"
     }}
   ]
 }}"""),
@@ -70,13 +77,26 @@ Candidate Profile Context:
 {f"- Target Roles: {', '.join(request.target_roles)}" if request.target_roles else ""}
 Consider this background when crafting relevant questions."""
 
+            # Weak area targeting context
+            weak_area_context = ""
+            if request.weak_categories:
+                weak_area_context = f"""
+IMPORTANT - WEAK AREA FOCUS:
+The candidate struggles with these categories: {', '.join(request.weak_categories)}
+Allocate MORE questions (at least 40% extra) to these weak categories to help them improve.
+Make these questions progressively challenging to build understanding."""
+
+            difficulty = request.difficulty or "medium"
+
             input_data = {
                 "total_questions": request.total_questions,
                 "experience_level": request.experience_level,
                 "role": request.role,
                 "company": request.company,
                 "categories": ", ".join(request.categories),
+                "difficulty": difficulty,
                 "profile_context": profile_context,
+                "weak_area_context": weak_area_context,
                 "input": "Generate interview questions"
             }
             
@@ -131,6 +151,20 @@ Consider this background when crafting relevant questions."""
                 "How would you design a recommendation system for an e-commerce platform?",
                 "Design a distributed cache system.",
                 "How would you design a real-time collaborative document editor?"
+            ],
+            "domain_knowledge": [
+                "What are microservices and when would you choose them over a monolithic architecture?",
+                "Explain the CAP theorem and its implications for distributed systems.",
+                "What is CI/CD and why is it important in modern software development?",
+                "Describe the differences between SQL and NoSQL databases and when to use each.",
+                "What are design patterns and can you explain the Observer pattern with an example?"
+            ],
+            "communication": [
+                "How would you explain a complex technical concept to a non-technical stakeholder?",
+                "Describe how you would present a technical proposal to your team.",
+                "How do you handle disagreements about technical decisions with your colleagues?",
+                "Explain how you would document a system you built for future developers.",
+                "How would you communicate a project delay to your manager and stakeholders?"
             ]
         }
         

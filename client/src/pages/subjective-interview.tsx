@@ -35,9 +35,15 @@ export default function SubjectiveInterview() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [textAnswer, setTextAnswer] = useState<string>("");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Parse query params for difficulty and resume
+  const searchParams = new URLSearchParams(window.location.search);
+  const difficulty = searchParams.get("difficulty") || "medium";
+  const resumeSessionId = searchParams.get("resume");
 
   const [fullscreenMonitor] = useState(() => new FullscreenMonitor({
     maxExits: 3,
@@ -101,6 +107,14 @@ export default function SubjectiveInterview() {
   // Create interview session
   const createSessionMutation = useMutation({
     mutationFn: async () => {
+      // If resuming, just return the existing session
+      if (resumeSessionId) {
+        setIsResuming(true);
+        const response = await apiRequest("GET", `/api/interviews/sessions/${resumeSessionId}`);
+        const session = await response.json();
+        return { session };
+      }
+      
       // Use user's first target company and role, with fallbacks
       const company = userData?.targetCompanies?.[0] || "Google";
       const role = userData?.targetRoles?.[0] || "Software Engineer";
@@ -110,12 +124,19 @@ export default function SubjectiveInterview() {
         company,
         role,
         totalQuestions: 10,
+        difficulty,
       });
       return response.json();
     },
     onSuccess: (data) => {
-      setSessionId(data.session.id);
-      // Don't start timer yet - wait for fullscreen
+      const sid = data.session?.id || data.id;
+      setSessionId(sid);
+      
+      // If resuming, figure out which question to start from
+      if (isResuming || resumeSessionId) {
+        const currentQ = data.session?.currentQuestion || data.currentQuestion || 0;
+        setCurrentQuestionIndex(currentQ);
+      }
     },
     onError: (error) => {
       toast({
@@ -129,6 +150,10 @@ export default function SubjectiveInterview() {
   // Get questions for session
   const { data: questionsData, isLoading: isLoadingQuestions } = useQuery({
     queryKey: ["/api/interviews/sessions", sessionId, "questions"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/interviews/sessions/${sessionId}/questions`);
+      return response.json();
+    },
     enabled: !!sessionId,
   });
 

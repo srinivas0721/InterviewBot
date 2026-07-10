@@ -10,9 +10,31 @@ from .database import engine, Base, get_db
 from .config import settings
 from .schemas import UserUpdate, UserResponse
 from .models import User
+from .middleware import RateLimitMiddleware
 
-# Create database tables
+# Create database tables (new tables only — doesn't alter existing)
 Base.metadata.create_all(bind=engine)
+
+# Auto-migrate: add missing columns to existing tables
+def _run_auto_migrations():
+    """Safely add new columns that don't exist yet."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        
+        # Add difficulty column to interview_sessions if missing
+        if "interview_sessions" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("interview_sessions")]
+            if "difficulty" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        "ALTER TABLE interview_sessions ADD COLUMN difficulty VARCHAR(20) DEFAULT 'medium'"
+                    ))
+                print("✅ Auto-migrated: added 'difficulty' column to interview_sessions")
+    except Exception as e:
+        print(f"⚠️ Auto-migration skipped: {e}")
+
+_run_auto_migrations()
 
 app = FastAPI(
     title="InterviewBot API",
@@ -21,12 +43,13 @@ app = FastAPI(
 )
 
 # Add session middleware
+is_production = settings.environment == "production"
 app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.session_secret,
     max_age=1209600,  # 14 days
-    same_site="none",  
-    https_only=True   # ✅ secure cookies in production
+    same_site="none" if is_production else "lax",  
+    https_only=is_production  # Only require HTTPS in production
 )
 
 # Add CORS middleware
@@ -41,6 +64,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware, requests_per_minute=30, session_create_per_hour=10)
 
 # Include routers
 app.include_router(health.router, prefix="/api")

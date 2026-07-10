@@ -76,13 +76,24 @@ export interface InterviewSession {
   company: string;
   role: string;
   mode: string;
+  difficulty?: string;
   overallScore: string;
   categoryScores: Record<string, number>;
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
   totalQuestions: number;
+  currentQuestion: number;
+  status?: string;
   completedAt: string;
+  createdAt?: string;
+}
+
+export interface ResumableSession {
+  session: InterviewSession;
+  questionsGenerated: number;
+  questionsAnswered: number;
+  canResume: boolean;
 }
 
 export interface SessionResults {
@@ -109,6 +120,8 @@ export interface DetailedAnswer {
     voiceTranscript?: string;
     score: number;
     feedback: string;
+    correctedAnswer?: string;
+    missingPoints?: string;
     evaluationDetails: {
       clarity?: number;
       depth?: number;

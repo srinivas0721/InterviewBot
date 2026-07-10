@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from ..database import get_db
-from ..models import User, InterviewSession, Question, Answer
+from ..models import User, InterviewSession, Question, Answer, BookmarkedQuestion
 from ..routers.auth import get_current_user
 # Removed complex workflow system for simpler direct processing
 from ..schemas import (
@@ -24,6 +24,9 @@ async def create_interview_session(
 ):
     """Create a new interview session"""
     try:
+        # Determine difficulty
+        difficulty = getattr(session_data, 'difficulty', None) or "medium"
+        
         # Create database record
         db_session = InterviewSession(
             user_id=current_user.id,
@@ -31,30 +34,46 @@ async def create_interview_session(
             company=session_data.company,
             role=session_data.role,
             total_questions=session_data.total_questions,
+            difficulty=difficulty,
             status="in_progress"
         )
         db.add(db_session)
         db.commit()
         db.refresh(db_session)
         
-        # Start LangGraph workflow
-        workflow_data = {
-            "session_id": str(db_session.id),
-            "user_id": str(current_user.id),
-            "company": session_data.company,
-            "role": session_data.role,
-            "mode": session_data.mode,
-            "experience_level": getattr(current_user, 'experience_level', None) or "mid-level",
-            "target_companies": getattr(current_user, 'target_companies', None) or [],
-            "target_roles": getattr(current_user, 'target_roles', None) or [],
-            "total_questions": session_data.total_questions
-        }
-        
         # Generate questions directly without workflow complexity
         from ..services.ai_service import ai_service
         from ..schemas import QuestionGenerationRequest
         
-        print(f"🎯 Creating interview: {session_data.company} - {session_data.role}")
+        print(f"🎯 Creating interview: {session_data.company} - {session_data.role} (difficulty: {difficulty})")
+        
+        # Weak area targeting: find categories where user historically scores low
+        weak_categories = []
+        try:
+            completed_sessions = db.query(InterviewSession)\
+                .filter(
+                    InterviewSession.user_id == current_user.id,
+                    InterviewSession.status == "completed"
+                ).all()
+            
+            if completed_sessions:
+                category_totals = {}
+                category_counts = {}
+                for s in completed_sessions:
+                    if s.category_scores:
+                        for cat, score in s.category_scores.items():
+                            category_totals[cat] = category_totals.get(cat, 0) + float(score)
+                            category_counts[cat] = category_counts.get(cat, 0) + 1
+                
+                for cat in category_totals:
+                    avg = category_totals[cat] / category_counts[cat]
+                    if avg < 6.0:  # Below 6 is a weak area
+                        weak_categories.append(cat)
+                
+                if weak_categories:
+                    print(f"📊 Weak area targeting: {weak_categories}")
+        except Exception as e:
+            print(f"⚠️ Could not compute weak categories: {e}")
         
         # Generate questions using AI service directly
         questions_request = QuestionGenerationRequest(
@@ -63,8 +82,10 @@ async def create_interview_session(
             experience_level=getattr(current_user, 'experience_level', None) or "mid-level",
             categories=["technical", "behavioral", "system_design", "domain_knowledge", "communication"],
             total_questions=session_data.total_questions,
+            difficulty=difficulty,
             target_companies=getattr(current_user, 'target_companies', None) or [],
-            target_roles=getattr(current_user, 'target_roles', None) or []
+            target_roles=getattr(current_user, 'target_roles', None) or [],
+            weak_categories=weak_categories if weak_categories else None
         )
         
         print(f"🧠 Generating {session_data.total_questions} questions...")
@@ -87,10 +108,6 @@ async def create_interview_session(
         
         db.commit()
         print(f"💾 Stored {len(generated_questions)} questions in database")
-        
-        thread_id = f"interview_{db_session.id}"
-        
-        # Store thread_id in session for reference (you might want to add this to the DB)
         
         return {"session": InterviewSessionResponse.model_validate(db_session)}
         
@@ -131,6 +148,109 @@ async def get_recent_completed_sessions(
     return {
         "sessions": [InterviewSessionResponse.model_validate(session) for session in sessions]
     }
+
+
+@router.get("/sessions/in-progress")
+async def get_in_progress_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get any in-progress sessions that can be resumed"""
+    sessions = db.query(InterviewSession)\
+        .filter(
+            InterviewSession.user_id == current_user.id,
+            InterviewSession.status == "in_progress"
+        )\
+        .order_by(InterviewSession.created_at.desc())\
+        .all()
+    
+    resumable = []
+    for session in sessions:
+        # Check if session has questions generated
+        question_count = db.query(Question)\
+            .filter(Question.session_id == session.id)\
+            .count()
+        
+        if question_count > 0:
+            answered_count = db.query(Answer)\
+                .filter(Answer.session_id == session.id)\
+                .count()
+            
+            resumable.append({
+                "session": InterviewSessionResponse.model_validate(session).model_dump(),
+                "questionsGenerated": question_count,
+                "questionsAnswered": answered_count,
+                "canResume": True
+            })
+    
+    return {"sessions": resumable}
+
+
+# INTERVIEW HISTORY COMPARISON - must be before /sessions/{session_id} to avoid route conflict
+@router.post("/sessions/compare")
+async def compare_sessions(
+    session_ids: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Compare two or more interview sessions side by side"""
+    ids = session_ids.get("sessionIds", [])
+    
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 sessions to compare")
+    if len(ids) > 5:
+        raise HTTPException(status_code=400, detail="Can compare at most 5 sessions")
+    
+    sessions_data = []
+    for sid in ids:
+        session = db.query(InterviewSession)\
+            .filter(InterviewSession.id == sid, InterviewSession.user_id == current_user.id)\
+            .first()
+        
+        if not session:
+            continue
+        
+        sessions_data.append({
+            "id": str(session.id),
+            "company": session.company,
+            "role": session.role,
+            "mode": session.mode,
+            "difficulty": getattr(session, 'difficulty', 'medium'),
+            "overallScore": float(session.overall_score) if session.overall_score else 0,
+            "categoryScores": session.category_scores or {},
+            "totalQuestions": session.total_questions,
+            "strengths": session.strengths or [],
+            "weaknesses": session.weaknesses or [],
+            "completedAt": session.completed_at.isoformat() if session.completed_at else None,
+            "createdAt": session.created_at.isoformat() if session.created_at else None
+        })
+    
+    if len(sessions_data) < 2:
+        raise HTTPException(status_code=404, detail="Could not find enough valid sessions to compare")
+    
+    # Calculate improvement metrics
+    sorted_sessions = sorted(sessions_data, key=lambda s: s["createdAt"] or "")
+    improvement = {}
+    if len(sorted_sessions) >= 2:
+        first = sorted_sessions[0]
+        last = sorted_sessions[-1]
+        improvement = {
+            "overallScoreChange": last["overallScore"] - first["overallScore"],
+            "categoryChanges": {},
+            "timespan": f"{first['createdAt'][:10] if first['createdAt'] else 'N/A'} to {last['createdAt'][:10] if last['createdAt'] else 'N/A'}"
+        }
+        all_categories = set(list(first.get("categoryScores", {}).keys()) + list(last.get("categoryScores", {}).keys()))
+        for cat in all_categories:
+            first_score = first.get("categoryScores", {}).get(cat, 0)
+            last_score = last.get("categoryScores", {}).get(cat, 0)
+            improvement["categoryChanges"][cat] = round(last_score - first_score, 1)
+    
+    return {
+        "sessions": sessions_data,
+        "improvement": improvement,
+        "count": len(sessions_data)
+    }
+
 
 @router.get("/sessions/{session_id}", response_model=InterviewSessionResponse)
 async def get_interview_session(
@@ -264,6 +384,7 @@ async def submit_answer(
         )
         
         db.add(db_answer)
+        db.flush()  # Flush to ensure the new answer is visible in subsequent queries
         
         # Check if interview is complete
         total_questions = db.query(Question).filter(Question.session_id == session_id).count()
@@ -271,6 +392,9 @@ async def submit_answer(
         
         current_question = answered_questions
         completed = current_question >= total_questions
+        
+        # Initialize category_scores so it's always defined
+        category_scores = {}
         
         # Update session progress
         db.query(InterviewSession).filter(InterviewSession.id == session_id).update({
@@ -315,21 +439,91 @@ async def submit_answer(
         
         print(f"💾 Progress saved: question {current_question}/{total_questions}")
         
+        # Follow-up question logic: if score is very low, generate a simpler follow-up
+        follow_up_question = None
+        if not completed and evaluation and evaluation.get("score", 10) < 4.0:
+            try:
+                from ..services.ai_service import ai_service
+                from ..schemas import QuestionGenerationRequest
+                
+                print(f"🔄 Low score ({evaluation['score']}), generating follow-up question...")
+                follow_up_request = QuestionGenerationRequest(
+                    company=session.company,
+                    role=session.role,
+                    experience_level=getattr(current_user, 'experience_level', None) or "mid-level",
+                    categories=[str(question.category)],
+                    total_questions=1,
+                    difficulty="easy",
+                    target_companies=[],
+                    target_roles=[],
+                    weak_categories=[str(question.category)]
+                )
+                follow_up_questions = await ai_service.generate_questions(follow_up_request)
+                
+                if follow_up_questions:
+                    fq = follow_up_questions[0]
+                    # Insert as the next question after current position
+                    new_q_number = current_question + 1
+                    
+                    # Shift existing question numbers forward
+                    existing_later = db.query(Question)\
+                        .filter(Question.session_id == session_id, Question.question_number >= new_q_number)\
+                        .order_by(Question.question_number.desc())\
+                        .all()
+                    for eq in existing_later:
+                        eq.question_number += 1
+                    
+                    # Insert follow-up question
+                    db_followup = Question(
+                        session_id=session_id,
+                        question_number=new_q_number,
+                        category=fq.category,
+                        question_text=f"[Follow-up] {fq.question_text}",
+                        options=fq.options,
+                        correct_answer=fq.correct_answer,
+                        explanation=fq.explanation,
+                        difficulty="easy"
+                    )
+                    db.add(db_followup)
+                    
+                    # Update total questions count
+                    db.query(InterviewSession).filter(InterviewSession.id == session_id).update({
+                        InterviewSession.total_questions: InterviewSession.total_questions + 1
+                    })
+                    db.commit()
+                    
+                    total_questions += 1
+                    follow_up_question = {
+                        "id": str(db_followup.id),
+                        "question_text": str(db_followup.question_text),
+                        "category": str(db_followup.category),
+                        "difficulty": "easy",
+                        "options": db_followup.options,
+                        "isFollowUp": True
+                    }
+                    print(f"✅ Follow-up question inserted at position {new_q_number}")
+            except Exception as e:
+                print(f"⚠️ Failed to generate follow-up question: {e}")
+        
         # Get next question if not completed
         next_question = None
         if not completed:
-            remaining_questions = db.query(Question)\
-                .filter(Question.session_id == session_id, Question.question_number > current_question)\
-                .order_by(Question.question_number)\
-                .first()
-            if remaining_questions:
-                next_question = {
-                    "id": str(remaining_questions.id),
-                    "question_text": str(remaining_questions.question_text),
-                    "category": str(remaining_questions.category),
-                    "difficulty": str(remaining_questions.difficulty),
-                    "options": remaining_questions.options
-                }
+            # If we generated a follow-up, use that
+            if follow_up_question:
+                next_question = follow_up_question
+            else:
+                remaining_questions = db.query(Question)\
+                    .filter(Question.session_id == session_id, Question.question_number > current_question)\
+                    .order_by(Question.question_number)\
+                    .first()
+                if remaining_questions:
+                    next_question = {
+                        "id": str(remaining_questions.id),
+                        "question_text": str(remaining_questions.question_text),
+                        "category": str(remaining_questions.category),
+                        "difficulty": str(remaining_questions.difficulty),
+                        "options": remaining_questions.options
+                    }
         
         return {
             "evaluation": evaluation,
@@ -339,12 +533,99 @@ async def submit_answer(
                 "total": total_questions,
                 "completed": completed
             },
-            "current_scores": category_scores if completed and 'category_scores' in locals() else {}
+            "current_scores": category_scores if completed else {}
         }
         
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to submit answer: {str(e)}")
+
+
+# QUESTION BOOKMARKS / FAVORITES — must be before /{session_id} catch-all
+
+@router.get("/bookmarks")
+async def get_bookmarked_questions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all bookmarked questions for current user"""
+    bookmarks = db.query(BookmarkedQuestion)\
+        .filter(BookmarkedQuestion.user_id == current_user.id)\
+        .order_by(BookmarkedQuestion.created_at.desc())\
+        .all()
+    
+    result = []
+    for bm in bookmarks:
+        question = db.query(Question).filter(Question.id == bm.question_id).first()
+        if question:
+            answer = db.query(Answer)\
+                .filter(Answer.question_id == bm.question_id, Answer.user_id == current_user.id)\
+                .first()
+            
+            result.append({
+                "bookmarkId": str(bm.id),
+                "questionId": str(question.id),
+                "category": question.category,
+                "questionText": question.question_text,
+                "difficulty": question.difficulty,
+                "createdAt": bm.created_at.isoformat() if bm.created_at else None,
+                "userScore": float(answer.score) if answer and answer.score else None,
+                "userFeedback": answer.feedback if answer else None
+            })
+    
+    return {"bookmarks": result, "total": len(result)}
+
+
+@router.post("/questions/{question_id}/bookmark")
+async def bookmark_question(
+    question_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Bookmark a question for future reference"""
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    existing = db.query(BookmarkedQuestion)\
+        .filter(BookmarkedQuestion.user_id == current_user.id, BookmarkedQuestion.question_id == question_id)\
+        .first()
+    
+    if existing:
+        return {"message": "Question already bookmarked", "bookmarkId": str(existing.id)}
+    
+    bookmark = BookmarkedQuestion(
+        user_id=current_user.id,
+        question_id=question_id
+    )
+    db.add(bookmark)
+    db.commit()
+    db.refresh(bookmark)
+    
+    return {"message": "Question bookmarked successfully", "bookmarkId": str(bookmark.id)}
+
+
+@router.delete("/questions/{question_id}/bookmark")
+async def remove_bookmark(
+    question_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a bookmark from a question"""
+    bookmark = db.query(BookmarkedQuestion)\
+        .filter(BookmarkedQuestion.user_id == current_user.id, BookmarkedQuestion.question_id == question_id)\
+        .first()
+    
+    if not bookmark:
+        raise HTTPException(status_code=404, detail="Bookmark not found")
+    
+    db.delete(bookmark)
+    db.commit()
+    
+    return {"message": "Bookmark removed successfully"}
+
+
+# Catch-all routes — /{session_id} pattern, must be LAST among non-parameterized routes
 
 @router.get("/{session_id}")
 async def get_interview_results(
@@ -754,14 +1035,14 @@ async def get_interview_results_alias(
     """Get interview results - alias for frontend compatibility"""
     return await get_interview_results(session_id, current_user, db)
 
-@router.get("/{session_id}/report")
+@router.get("/{session_id}/download-report")
 async def get_session_report_alias(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get session report - alias for frontend compatibility"""
-    return await get_session_report(session_id, current_user, db)
+    return await download_report(session_id, current_user, db)
 
 @router.get("/{session_id}/detailed-answers")
 async def get_detailed_answers(

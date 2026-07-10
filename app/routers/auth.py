@@ -125,8 +125,8 @@ async def update_profile(
 ):
     """Update user profile"""
     try:
-        # Update user profile
-        for attr, value in profile_data.model_dump(by_alias=False).items():
+        # Update user profile - only update fields that were explicitly set
+        for attr, value in profile_data.model_dump(by_alias=False, exclude_unset=True).items():
             setattr(current_user, attr, value)
         
         db.commit()

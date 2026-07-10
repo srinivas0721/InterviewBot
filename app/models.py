@@ -37,6 +37,7 @@ class User(Base):
     # Relationships
     interview_sessions = relationship("InterviewSession", back_populates="user", cascade="all, delete-orphan")
     answers = relationship("Answer", back_populates="user", cascade="all, delete-orphan")
+    bookmarks = relationship("BookmarkedQuestion", back_populates="user", cascade="all, delete-orphan")
 
 # Interview sessions
 class InterviewSession(Base):
@@ -49,6 +50,7 @@ class InterviewSession(Base):
     role = Column(String(255), nullable=False)
     status = Column(String(20), nullable=False, default="in_progress")  # in_progress, completed, abandoned
     total_questions = Column(Integer, nullable=False, default=10, name="total_questions")
+    difficulty = Column(String(20), default="medium")  # easy, medium, hard, adaptive
     current_question = Column(Integer, nullable=False, default=0, name="current_question")
     overall_score = Column(Numeric(3, 1), name="overall_score")
     category_scores = Column(JSON, name="category_scores", default=dict)
@@ -110,3 +112,18 @@ class Answer(Base):
     question = relationship("Question", back_populates="answers")
     session = relationship("InterviewSession", back_populates="answers")
     user = relationship("User", back_populates="answers")
+
+
+# Bookmarked Questions
+class BookmarkedQuestion(Base):
+    __tablename__ = "bookmarked_questions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, name="user_id")
+    question_id = Column(UUID(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, name="question_id")
+    note = Column(Text)  # Optional user note about why they bookmarked it
+    created_at = Column(DateTime, name="created_at", server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="bookmarks")
+    question = relationship("Question")
