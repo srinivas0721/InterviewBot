@@ -180,6 +180,14 @@ export default function InterviewResults() {
   const [isDownloading, setIsDownloading] = useState(false);
   
   const handleDownloadReport = async () => {
+    if (!results) {
+      toast({
+        title: "Report not ready",
+        description: "Please wait for the results to finish loading.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       setIsDownloading(true);
       
@@ -191,8 +199,8 @@ export default function InterviewResults() {
       await downloadPDFReport(results, detailedData.detailed_results || []);
       
       toast({
-        title: "✅ PDF Report Generated",
-        description: "Your PDF report is being prepared. A print dialog will open.",
+        title: "✅ PDF downloaded",
+        description: "Your interview report has been saved to your device.",
       });
     } catch (error) {
       console.error("PDF generation error:", error);

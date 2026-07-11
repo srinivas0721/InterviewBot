@@ -1,528 +1,454 @@
-// PDF Report Generator Utility
+// PDF Report Generator
 // client/src/lib/pdfGenerator.ts
+//
+// Builds a clean, professional, text-based PDF with jsPDF and downloads it
+// directly (no new tab, no browser print dialog). Text is real vector text,
+// so the file is crisp, selectable and small.
 
-import type { SessionResults, DetailedAnswer } from '@/lib/types';
+import { jsPDF } from "jspdf";
+import type { SessionResults, DetailedAnswer } from "@/lib/types";
 
-/**
- * Generate a beautiful HTML template for PDF conversion
- */
-export function generatePDFHTML(
-  results: SessionResults,
-  detailedAnswers: DetailedAnswer[]
-): string {
-  const { session, overallScore, categoryScores, strengths, weaknesses, recommendations } = results;
+// ---- Layout constants (points; A4 = 595 x 842) ----
+const PAGE_W = 595;
+const PAGE_H = 842;
+const MARGIN = 44;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+const FOOTER_H = 28;
 
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Interview Report - ${session.company} ${session.role}</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+// ---- Palette (RGB tuples) ----
+type RGB = [number, number, number];
+const C = {
+  primary: [99, 102, 241] as RGB,
+  primaryDark: [124, 58, 237] as RGB,
+  ink: [26, 26, 46] as RGB,
+  muted: [107, 114, 128] as RGB,
+  line: [226, 232, 240] as RGB,
+  card: [246, 247, 251] as RGB,
+  success: [16, 185, 129] as RGB,
+  warn: [245, 158, 11] as RGB,
+  danger: [239, 68, 68] as RGB,
+  white: [255, 255, 255] as RGB,
+};
 
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      line-height: 1.6;
-      color: #1a1a2e;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 40px;
-    }
+function scoreColor(score: number | undefined): RGB {
+  if (score == null) return C.danger;
+  if (score >= 8) return C.success;
+  if (score >= 6) return C.primary;
+  if (score >= 4) return C.warn;
+  return C.danger;
+}
 
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      background: white;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    }
+/** Strip common markdown so it reads cleanly as plain PDF text. */
+function stripMarkdown(input: string): string {
+  return (input || "")
+    .replace(/```[\s\S]*?```/g, (block) =>
+      block.replace(/```(\w+)?/g, "").trim(),
+    ) // keep code content, drop fences
+    .replace(/`([^`]+)`/g, "$1") // inline code
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+    .replace(/\*([^*]+)\*/g, "$1") // italics
+    .replace(/^#{1,6}\s+/gm, "") // headings
+    .replace(/^\s*[-*+]\s+/gm, "• ") // bullet markers
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 60px 40px;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .header::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      right: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-      animation: pulse 4s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-
-    .header h1 {
-      font-size: 42px;
-      font-weight: 800;
-      margin-bottom: 10px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .header .subtitle {
-      font-size: 24px;
-      opacity: 0.9;
-      position: relative;
-      z-index: 1;
-    }
-
-    .header .date {
-      font-size: 16px;
-      opacity: 0.8;
-      margin-top: 20px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .content {
-      padding: 40px;
-    }
-
-    .score-card {
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-      color: white;
-      padding: 40px;
-      border-radius: 15px;
-      text-align: center;
-      margin-bottom: 40px;
-      box-shadow: 0 10px 30px rgba(245, 87, 108, 0.3);
-    }
-
-    .score-card h2 {
-      font-size: 24px;
-      margin-bottom: 15px;
-      opacity: 0.9;
-    }
-
-    .score-card .score {
-      font-size: 72px;
-      font-weight: 800;
-      line-height: 1;
-    }
-
-    .section {
-      margin-bottom: 40px;
-      page-break-inside: avoid;
-    }
-
-    .section h2 {
-      font-size: 28px;
-      margin-bottom: 20px;
-      color: #667eea;
-      padding-bottom: 10px;
-      border-bottom: 3px solid #667eea;
-      display: flex;
-      align-items: center;
-    }
-
-    .section h2::before {
-      content: '';
-      width: 8px;
-      height: 28px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      margin-right: 15px;
-      border-radius: 4px;
-    }
-
-    .category-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-      margin-top: 20px;
-    }
-
-    .category-item {
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-      padding: 20px;
-      border-radius: 12px;
-      border-left: 5px solid #667eea;
-    }
-
-    .category-item .name {
-      font-size: 16px;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 10px;
-    }
-
-    .category-item .score {
-      font-size: 32px;
-      font-weight: 800;
-      color: #667eea;
-    }
-
-    .progress-bar {
-      width: 100%;
-      height: 8px;
-      background: #e0e0e0;
-      border-radius: 4px;
-      overflow: hidden;
-      margin-top: 10px;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-      border-radius: 4px;
-      transition: width 0.3s ease;
-    }
-
-    .list-section {
-      background: #f8f9fa;
-      padding: 25px;
-      border-radius: 12px;
-      margin-top: 20px;
-    }
-
-    .list-section ul {
-      list-style: none;
-    }
-
-    .list-section li {
-      padding: 12px 0;
-      padding-left: 30px;
-      position: relative;
-      border-bottom: 1px solid #e0e0e0;
-    }
-
-    .list-section li:last-child {
-      border-bottom: none;
-    }
-
-    .list-section.strengths li::before {
-      content: '✓';
-      position: absolute;
-      left: 0;
-      color: #10b981;
-      font-weight: bold;
-      font-size: 20px;
-    }
-
-    .list-section.weaknesses li::before {
-      content: '⚠';
-      position: absolute;
-      left: 0;
-      font-size: 18px;
-    }
-
-    .list-section.recommendations li::before {
-      content: '→';
-      position: absolute;
-      left: 0;
-      color: #667eea;
-      font-weight: bold;
-      font-size: 20px;
-    }
-
-    .qa-section {
-      margin-top: 20px;
-    }
-
-    .qa-item {
-      background: white;
-      border: 2px solid #e0e0e0;
-      border-radius: 12px;
-      padding: 25px;
-      margin-bottom: 25px;
-      page-break-inside: avoid;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    }
-
-    .qa-item .question {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 15px 20px;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      font-weight: 600;
-    }
-
-    .qa-item .category-badge {
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.2);
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      margin-bottom: 8px;
-    }
-
-    .qa-item .answer {
-      background: #f8f9fa;
-      padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      line-height: 1.8;
-    }
-
-    .qa-item .score-breakdown {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-
-    .score-pill {
-      text-align: center;
-      padding: 10px;
-      border-radius: 8px;
-      background: #f0f0f0;
-    }
-
-    .score-pill .label {
-      font-size: 11px;
-      color: #666;
-      display: block;
-      margin-bottom: 4px;
-    }
-
-    .score-pill .value {
-      font-size: 20px;
-      font-weight: 800;
-    }
-
-    .score-excellent { color: #10b981; }
-    .score-good { color: #667eea; }
-    .score-average { color: #f59e0b; }
-    .score-poor { color: #ef4444; }
-
-    .feedback-box {
-      background: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 15px;
-      border-radius: 8px;
-      margin-top: 15px;
-    }
-
-    .feedback-box h4 {
-      color: #92400e;
-      margin-bottom: 8px;
-      font-size: 14px;
-    }
-
-    .feedback-box p {
-      color: #78350f;
-      font-size: 14px;
-    }
-
-    .footer {
-      background: #1a1a2e;
-      color: white;
-      padding: 30px;
-      text-align: center;
-      margin-top: 40px;
-    }
-
-    .footer p {
-      opacity: 0.8;
-      font-size: 14px;
-    }
-
-    @media print {
-      body {
-        padding: 0;
-      }
-      .container {
-        box-shadow: none;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Interview Performance Report</h1>
-      <div class="subtitle">${session.company} - ${session.role}</div>
-      <div class="date">Completed on ${new Date(session.completedAt).toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      })}</div>
-    </div>
-
-    <div class="content">
-      <div class="score-card">
-        <h2>Overall Performance Score</h2>
-        <div class="score">${overallScore.toFixed(1)}/10</div>
-      </div>
-
-      <div class="section">
-        <h2>Category Performance</h2>
-        <div class="category-grid">
-          ${Object.entries(categoryScores).map(([category, score]) => `
-            <div class="category-item">
-              <div class="name">${category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
-              <div class="score">${(score as number).toFixed(1)}/10</div>
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: ${(score as number) * 10}%"></div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-
-      ${strengths.length > 0 ? `
-      <div class="section">
-        <h2>Strengths</h2>
-        <div class="list-section strengths">
-          <ul>
-            ${strengths.map(strength => `<li>${strength}</li>`).join('')}
-          </ul>
-        </div>
-      </div>
-      ` : ''}
-
-      ${weaknesses.length > 0 ? `
-      <div class="section">
-        <h2>Areas for Improvement</h2>
-        <div class="list-section weaknesses">
-          <ul>
-            ${weaknesses.map(weakness => `<li>${weakness}</li>`).join('')}
-          </ul>
-        </div>
-      </div>
-      ` : ''}
-
-      ${recommendations.length > 0 ? `
-      <div class="section">
-        <h2>Recommendations</h2>
-        <div class="list-section recommendations">
-          <ul>
-            ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
-          </ul>
-        </div>
-      </div>
-      ` : ''}
-
-      <div class="section">
-        <h2>Detailed Question-by-Question Analysis</h2>
-        <div class="qa-section">
-          ${detailedAnswers.map((item, index) => {
-            const answer = item.answer;
-            if (!answer) return '';
-            
-            const getScoreClass = (score: number | undefined) => {
-              if (!score) return 'score-poor';
-              if (score >= 8) return 'score-excellent';
-              if (score >= 6) return 'score-good';
-              if (score >= 4) return 'score-average';
-              return 'score-poor';
-            };
-
-            return `
-              <div class="qa-item">
-                <div class="category-badge">${item.question.category.toUpperCase()}</div>
-                <div class="question">
-                  <strong>Question ${index + 1}:</strong> ${item.question.questionText}
-                </div>
-                <div class="answer">
-                  <strong>Your Answer:</strong><br>
-                  ${answer.subjectiveAnswer || answer.voiceTranscript || 'No answer provided'}
-                </div>
-                <div class="score-breakdown">
-                  <div class="score-pill">
-                    <span class="label">Overall</span>
-                    <span class="value ${getScoreClass(answer.score)}">${answer.score?.toFixed(1) || 'N/A'}/10</span>
-                  </div>
-                  ${answer.evaluationDetails?.clarity ? `
-                  <div class="score-pill">
-                    <span class="label">Clarity</span>
-                    <span class="value ${getScoreClass(answer.evaluationDetails.clarity)}">${answer.evaluationDetails.clarity.toFixed(1)}/10</span>
-                  </div>
-                  ` : ''}
-                  ${answer.evaluationDetails?.depth ? `
-                  <div class="score-pill">
-                    <span class="label">Depth</span>
-                    <span class="value ${getScoreClass(answer.evaluationDetails.depth)}">${answer.evaluationDetails.depth.toFixed(1)}/10</span>
-                  </div>
-                  ` : ''}
-                  ${answer.evaluationDetails?.relevance ? `
-                  <div class="score-pill">
-                    <span class="label">Relevance</span>
-                    <span class="value ${getScoreClass(answer.evaluationDetails.relevance)}">${answer.evaluationDetails.relevance.toFixed(1)}/10</span>
-                  </div>
-                  ` : ''}
-                  ${answer.evaluationDetails?.structure ? `
-                  <div class="score-pill">
-                    <span class="label">Structure</span>
-                    <span class="value ${getScoreClass(answer.evaluationDetails.structure)}">${answer.evaluationDetails.structure.toFixed(1)}/10</span>
-                  </div>
-                  ` : ''}
-                </div>
-                ${answer.feedback ? `
-                <div class="feedback-box">
-                  <h4>Feedback:</h4>
-                  <p>${answer.feedback}</p>
-                </div>
-                ` : ''}
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>Generated by InterviewBot - AI-Powered Interview Practice Platform</p>
-      <p>© ${new Date().getFullYear()} InterviewBot. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-  `.trim();
+function prettyCategory(cat: string): string {
+  return (cat || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
 /**
- * Convert HTML to PDF and trigger download
- * Uses browser's print functionality with custom styling
+ * Small helper that tracks the cursor, handles page breaks, and draws a
+ * repeating header/footer.
+ */
+class Doc {
+  doc: jsPDF;
+  y: number;
+  title: string;
+
+  constructor(title: string) {
+    this.doc = new jsPDF({ unit: "pt", format: "a4" });
+    this.y = MARGIN;
+    this.title = title;
+  }
+
+  setFill(c: RGB) {
+    this.doc.setFillColor(c[0], c[1], c[2]);
+  }
+  setText(c: RGB) {
+    this.doc.setTextColor(c[0], c[1], c[2]);
+  }
+  setDraw(c: RGB) {
+    this.doc.setDrawColor(c[0], c[1], c[2]);
+  }
+
+  /** Ensure `needed` points fit before the footer; add a page otherwise. */
+  ensure(needed: number) {
+    if (this.y + needed > PAGE_H - MARGIN - FOOTER_H) {
+      this.addPage();
+    }
+  }
+
+  addPage() {
+    this.footer();
+    this.doc.addPage();
+    this.y = MARGIN;
+  }
+
+  footer() {
+    const d = this.doc;
+    const page = d.getNumberOfPages();
+    d.setDrawColor(C.line[0], C.line[1], C.line[2]);
+    d.setLineWidth(0.5);
+    d.line(MARGIN, PAGE_H - MARGIN - FOOTER_H + 8, PAGE_W - MARGIN, PAGE_H - MARGIN - FOOTER_H + 8);
+    d.setFont("helvetica", "normal");
+    d.setFontSize(8);
+    d.setTextColor(C.muted[0], C.muted[1], C.muted[2]);
+    d.text("Generated by InterviewBot - AI-Powered Interview Practice", MARGIN, PAGE_H - MARGIN - 6);
+    d.text(`Page ${page}`, PAGE_W - MARGIN, PAGE_H - MARGIN - 6, { align: "right" });
+  }
+
+  /** Wrapped paragraph. Returns nothing; advances cursor. */
+  paragraph(
+    text: string,
+    opts: {
+      x?: number;
+      width?: number;
+      size?: number;
+      style?: "normal" | "bold" | "italic";
+      color?: RGB;
+      lineGap?: number;
+      indent?: number;
+    } = {},
+  ) {
+    const x = opts.x ?? MARGIN;
+    const width = opts.width ?? CONTENT_W;
+    const size = opts.size ?? 10;
+    const style = opts.style ?? "normal";
+    const color = opts.color ?? C.ink;
+    const lineHeight = size * 1.45;
+    const d = this.doc;
+    d.setFont("helvetica", style);
+    d.setFontSize(size);
+    this.setText(color);
+    const lines: string[] = d.splitTextToSize(text, width);
+    for (const line of lines) {
+      this.ensure(lineHeight);
+      d.text(line, x, this.y);
+      this.y += lineHeight;
+    }
+  }
+}
+
+/** Section heading with a colored accent bar. */
+function sectionHeading(doc: Doc, label: string) {
+  doc.y += 10;
+  doc.ensure(30);
+  const d = doc.doc;
+  doc.setFill(C.primary);
+  d.rect(MARGIN, doc.y - 10, 5, 18, "F");
+  d.setFont("helvetica", "bold");
+  d.setFontSize(15);
+  doc.setText(C.primaryDark);
+  d.text(label, MARGIN + 12, doc.y + 4);
+  doc.y += 14;
+  doc.setDraw(C.line);
+  d.setLineWidth(0.75);
+  d.line(MARGIN, doc.y, PAGE_W - MARGIN, doc.y);
+  doc.y += 14;
+}
+
+function bulletList(doc: Doc, items: string[], marker: string, markerColor: RGB) {
+  const d = doc.doc;
+  for (const item of items) {
+    const text = stripMarkdown(item);
+    const textX = MARGIN + 18;
+    const lineHeight = 10 * 1.45;
+    d.setFont("helvetica", "normal");
+    d.setFontSize(10);
+    const lines: string[] = d.splitTextToSize(text, CONTENT_W - 18);
+    doc.ensure(lines.length * lineHeight + 4);
+    // marker
+    d.setFont("helvetica", "bold");
+    doc.setText(markerColor);
+    d.text(marker, MARGIN + 2, doc.y);
+    // text
+    d.setFont("helvetica", "normal");
+    doc.setText(C.ink);
+    for (const line of lines) {
+      d.text(line, textX, doc.y);
+      doc.y += lineHeight;
+    }
+    doc.y += 4;
+  }
+}
+
+/** A labelled block with a tinted background (feedback / missing / ideal). */
+function calloutBlock(
+  doc: Doc,
+  label: string,
+  body: string,
+  tint: RGB,
+  accent: RGB,
+) {
+  const text = stripMarkdown(body);
+  if (!text) return;
+  const d = doc.doc;
+  const padX = 12;
+  const padY = 10;
+  const labelSize = 10;
+  const bodySize = 10;
+  const bodyLineHeight = bodySize * 1.5;
+
+  d.setFont("helvetica", "normal");
+  d.setFontSize(bodySize);
+  const lines: string[] = d.splitTextToSize(text, CONTENT_W - padX * 2);
+  const blockH = padY * 2 + labelSize * 1.6 + lines.length * bodyLineHeight;
+
+  // If the whole block doesn't fit, move to next page (keeps it tidy).
+  doc.ensure(Math.min(blockH, PAGE_H - MARGIN * 2 - FOOTER_H));
+
+  const top = doc.y;
+  doc.setFill(tint);
+  doc.setDraw(accent);
+  d.setLineWidth(1);
+  // background + left accent
+  d.roundedRect(MARGIN, top, CONTENT_W, blockH, 6, 6, "F");
+  doc.setFill(accent);
+  d.rect(MARGIN, top, 4, blockH, "F");
+
+  // label
+  d.setFont("helvetica", "bold");
+  d.setFontSize(labelSize);
+  doc.setText(accent);
+  d.text(label, MARGIN + padX, top + padY + labelSize);
+
+  // body
+  d.setFont("helvetica", "normal");
+  d.setFontSize(bodySize);
+  doc.setText(C.ink);
+  let ty = top + padY + labelSize * 1.6 + bodyLineHeight * 0.4;
+  for (const line of lines) {
+    d.text(line, MARGIN + padX, ty);
+    ty += bodyLineHeight;
+  }
+  doc.y = top + blockH + 12;
+}
+
+function scorePills(
+  doc: Doc,
+  pills: Array<{ label: string; value: number | undefined }>,
+) {
+  const d = doc.doc;
+  const gap = 8;
+  const count = pills.length;
+  const pillW = (CONTENT_W - gap * (count - 1)) / count;
+  const pillH = 40;
+  doc.ensure(pillH + 8);
+  const top = doc.y;
+  pills.forEach((p, i) => {
+    const x = MARGIN + i * (pillW + gap);
+    doc.setFill(C.card);
+    d.roundedRect(x, top, pillW, pillH, 5, 5, "F");
+    d.setFont("helvetica", "normal");
+    d.setFontSize(7.5);
+    doc.setText(C.muted);
+    d.text(p.label.toUpperCase(), x + pillW / 2, top + 14, { align: "center" });
+    d.setFont("helvetica", "bold");
+    d.setFontSize(14);
+    doc.setText(scoreColor(p.value));
+    d.text(
+      p.value != null ? `${p.value.toFixed(1)}` : "N/A",
+      x + pillW / 2,
+      top + 32,
+      { align: "center" },
+    );
+  });
+  doc.y = top + pillH + 12;
+}
+
+/**
+ * Build the PDF and trigger a direct download.
  */
 export async function downloadPDFReport(
   results: SessionResults,
-  detailedAnswers: DetailedAnswer[]
+  detailedAnswers: DetailedAnswer[],
 ): Promise<void> {
-  const htmlContent = generatePDFHTML(results, detailedAnswers);
-  
-  // Create a blob with the HTML content
-  const blob = new Blob([htmlContent], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  
-  // Open in new window for printing
-  const printWindow = window.open(url, '_blank');
-  
-  if (printWindow) {
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-        // Clean up
-        setTimeout(() => {
-          printWindow.close();
-          URL.revokeObjectURL(url);
-        }, 100);
-      }, 500);
-    };
-  } else {
-    // Fallback: download HTML file
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `interview-report-${results.session.company}-${Date.now()}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const { session, overallScore, categoryScores, strengths, weaknesses, recommendations } = results;
+  const doc = new Doc(`Interview Report - ${session.company} ${session.role}`);
+  const d = doc.doc;
+
+  // ---------- Header band ----------
+  const headerH = 96;
+  doc.setFill(C.primary);
+  d.rect(0, 0, PAGE_W, headerH, "F");
+  d.setFont("helvetica", "bold");
+  d.setFontSize(22);
+  doc.setText(C.white);
+  d.text("Interview Performance Report", MARGIN, 42);
+  d.setFont("helvetica", "normal");
+  d.setFontSize(13);
+  d.text(`${session.company}  •  ${session.role}`, MARGIN, 64);
+  d.setFontSize(9.5);
+  const completed = session.completedAt ? new Date(session.completedAt) : new Date();
+  d.text(
+    `Completed on ${completed.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
+    MARGIN,
+    82,
+  );
+  doc.y = headerH + 26;
+
+  // ---------- Overall score card ----------
+  const cardH = 78;
+  doc.ensure(cardH);
+  doc.setFill(C.primaryDark);
+  d.roundedRect(MARGIN, doc.y, CONTENT_W, cardH, 10, 10, "F");
+  d.setFont("helvetica", "normal");
+  d.setFontSize(12);
+  doc.setText(C.white);
+  d.text("Overall Performance Score", MARGIN + 20, doc.y + 30);
+  d.setFont("helvetica", "bold");
+  d.setFontSize(34);
+  d.text(`${(overallScore ?? 0).toFixed(1)}`, MARGIN + 20, doc.y + 62);
+  d.setFont("helvetica", "normal");
+  d.setFontSize(16);
+  d.text("/ 10", MARGIN + 20 + d.getTextWidth(`${(overallScore ?? 0).toFixed(1)}`) + 32, doc.y + 62);
+  doc.y += cardH + 6;
+
+  // ---------- Category performance ----------
+  const cats = Object.entries(categoryScores || {});
+  if (cats.length > 0) {
+    sectionHeading(doc, "Category Performance");
+    for (const [cat, rawScore] of cats) {
+      const score = Number(rawScore) || 0;
+      const rowH = 30;
+      doc.ensure(rowH);
+      const top = doc.y;
+      d.setFont("helvetica", "bold");
+      d.setFontSize(10);
+      doc.setText(C.ink);
+      d.text(prettyCategory(cat), MARGIN, top + 8);
+      d.setFont("helvetica", "bold");
+      doc.setText(scoreColor(score));
+      d.text(`${score.toFixed(1)}/10`, PAGE_W - MARGIN, top + 8, { align: "right" });
+      // progress track
+      const barY = top + 16;
+      doc.setFill(C.line);
+      d.roundedRect(MARGIN, barY, CONTENT_W, 7, 3.5, 3.5, "F");
+      doc.setFill(scoreColor(score));
+      const fillW = Math.max(4, (CONTENT_W * Math.min(10, score)) / 10);
+      d.roundedRect(MARGIN, barY, fillW, 7, 3.5, 3.5, "F");
+      doc.y = top + rowH;
+    }
   }
+
+  // ---------- Strengths / Improvements / Recommendations ----------
+  if (strengths?.length) {
+    sectionHeading(doc, "Strengths");
+    bulletList(doc, strengths, "•", C.success);
+  }
+  if (weaknesses?.length) {
+    sectionHeading(doc, "Areas for Improvement");
+    bulletList(doc, weaknesses, "•", C.warn);
+  }
+  if (recommendations?.length) {
+    sectionHeading(doc, "Recommendations");
+    bulletList(doc, recommendations, "•", C.primary);
+  }
+
+  // ---------- Detailed Q&A ----------
+  sectionHeading(doc, "Question-by-Question Analysis");
+  detailedAnswers.forEach((item, index) => {
+    const answer = item.answer;
+
+    // Question header line
+    doc.y += 4;
+    doc.ensure(26);
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8);
+    doc.setText(C.primary);
+    d.text(
+      `Q${index + 1}  •  ${prettyCategory(item.question.category)}`,
+      MARGIN,
+      doc.y,
+    );
+    if (answer) {
+      doc.setText(scoreColor(answer.score));
+      d.text(
+        `${answer.score != null ? answer.score.toFixed(1) : "N/A"}/10`,
+        PAGE_W - MARGIN,
+        doc.y,
+        { align: "right" },
+      );
+    }
+    doc.y += 14;
+
+    // Question text
+    doc.paragraph(stripMarkdown(item.question.questionText), {
+      size: 11,
+      style: "bold",
+      color: C.ink,
+    });
+    doc.y += 4;
+
+    if (!answer) {
+      doc.paragraph("No answer provided for this question.", {
+        size: 10,
+        style: "italic",
+        color: C.muted,
+      });
+    } else {
+      // Your answer
+      calloutBlock(
+        doc,
+        "Your Answer",
+        answer.subjectiveAnswer || answer.voiceTranscript || "No answer provided",
+        C.card,
+        C.muted,
+      );
+
+      // Score breakdown pills (only if the detailed sub-scores exist)
+      const ev = answer.evaluationDetails || {};
+      const pills = [
+        { label: "Overall", value: answer.score },
+        { label: "Clarity", value: ev.clarity },
+        { label: "Depth", value: ev.depth },
+        { label: "Relevance", value: ev.relevance },
+        { label: "Structure", value: ev.structure },
+      ].filter((p) => p.value != null);
+      if (pills.length > 1) {
+        scorePills(doc, pills);
+      }
+
+      // Feedback
+      if (answer.feedback) {
+        calloutBlock(doc, "Feedback", answer.feedback, [254, 243, 199] as RGB, C.warn);
+      }
+      // Missing points
+      if (answer.missingPoints) {
+        calloutBlock(doc, "Missing Points", answer.missingPoints, [255, 237, 213] as RGB, [234, 88, 12] as RGB);
+      }
+      // Ideal answer
+      if (answer.correctedAnswer) {
+        calloutBlock(doc, "Ideal Answer", answer.correctedAnswer, [220, 252, 231] as RGB, C.success);
+      }
+    }
+
+    // separator between questions
+    doc.y += 2;
+    doc.ensure(10);
+    doc.setDraw(C.line);
+    d.setLineWidth(0.5);
+    d.line(MARGIN, doc.y, PAGE_W - MARGIN, doc.y);
+    doc.y += 8;
+  });
+
+  // Footer on the final page
+  doc.footer();
+
+  const safeCompany = (session.company || "interview").replace(/[^a-z0-9]+/gi, "-");
+  doc.doc.save(`InterviewBot-Report-${safeCompany}-${Date.now()}.pdf`);
 }
