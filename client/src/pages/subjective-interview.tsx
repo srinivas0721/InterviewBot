@@ -287,9 +287,20 @@ export default function SubjectiveInterview() {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!currentQuestion || isLocked(currentQuestionIndex)) return;
+    if (!currentQuestion) return;
 
     const isLastQuestion = currentQuestionIndex >= questions.length - 1;
+
+    // If the last question is already locked (submitted earlier, or its timer
+    // expired), there's nothing new to save — just open the review modal.
+    if (isLastQuestion && isLocked(currentQuestionIndex)) {
+      stop();
+      setShowSubmitConfirm(true);
+      return;
+    }
+
+    // Non-final questions that are locked have nothing to do.
+    if (isLocked(currentQuestionIndex)) return;
 
     if (isLastQuestion) {
       // On the final question, don't finalize immediately. Save this answer (if any)
