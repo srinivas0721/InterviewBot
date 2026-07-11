@@ -192,9 +192,10 @@ export default function VoiceInterview() {
   };
 
   // Get user data for profile preferences
-  const { data: userData } = useQuery({
+  const { data: userData, isSuccess: isUserLoaded } = useQuery({
     queryKey: ["/api/auth/user"],
   });
+  const hasCreatedSession = useRef(false);
 
   // Timer for each question (180 seconds = 3 minutes)
   const { timeLeft, isRunning, start, reset, isWarning } = useTimer(180, () => {
@@ -395,10 +396,14 @@ export default function VoiceInterview() {
     },
   });
 
-  // Initialize session on component mount
+  // Initialize session once. For a fresh interview, wait until the user profile
+  // has loaded so we use the real target company/role instead of the defaults.
   useEffect(() => {
+    if (hasCreatedSession.current) return;
+    if (!resumeSessionId && !isUserLoaded) return;
+    hasCreatedSession.current = true;
     createSessionMutation.mutate();
-  }, []);
+  }, [isUserLoaded, resumeSessionId]);
 
   // Show fullscreen prompt when session is ready
   useEffect(() => {

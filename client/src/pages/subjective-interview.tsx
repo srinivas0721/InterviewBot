@@ -89,9 +89,10 @@ export default function SubjectiveInterview() {
   const [hasStartedFullscreen, setHasStartedFullscreen] = useState(false);
 
   // Get user data for profile preferences
-  const { data: userData } = useQuery<any>({
+  const { data: userData, isSuccess: isUserLoaded } = useQuery<any>({
     queryKey: ["/api/auth/user"],
   });
+  const hasCreatedSession = useRef(false);
 
   // Timer for each question (300 seconds = 5 minutes)
   const { timeLeft, isRunning, start, reset, isWarning } = useTimer(300, () => {
@@ -209,10 +210,14 @@ export default function SubjectiveInterview() {
     },
   });
 
-  // Initialize session on component mount
+  // Initialize session once. For a fresh interview, wait until the user profile
+  // has loaded so we use the real target company/role instead of the defaults.
   useEffect(() => {
+    if (hasCreatedSession.current) return;
+    if (!resumeSessionId && !isUserLoaded) return;
+    hasCreatedSession.current = true;
     createSessionMutation.mutate();
-  }, []);
+  }, [isUserLoaded, resumeSessionId]);
 
   // Show fullscreen prompt when session is ready
   useEffect(() => {
