@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -55,9 +55,15 @@ function Router() {
       <Route path="/interview/:sessionId/results" component={() => <ProtectedRoute component={InterviewResults} />} />
       <Route path="/question-bank" component={() => <ProtectedRoute component={QuestionBank} />} />
       <Route path="/compare" component={() => <ProtectedRoute component={CompareSessions} />} />
-      
-      {/* Everything else — authenticated sees dashboard, unauthenticated sees landing */}
-      <Route component={() => <ProtectedRoute component={Dashboard} />} />
+
+      {/* Dashboard lives at "/" only. The old "/dashboard" path redirects here. */}
+      <Route path="/dashboard">
+        <Redirect to="/" />
+      </Route>
+      <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
+
+      {/* Unknown routes */}
+      <Route component={NotFound} />
     </Switch>
   );
 }
