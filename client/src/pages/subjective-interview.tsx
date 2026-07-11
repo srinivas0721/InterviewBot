@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export default function SubjectiveInterview() {
   const [answers, setAnswers] = useState<Record<number, string>>({});  // Track answers per question index
   const [submittedQuestions, setSubmittedQuestions] = useState<Set<number>>(new Set());  // Which questions were submitted
   const [timers, setTimers] = useState<Record<number, number>>({});  // Track remaining time per question
+  const timersRef = useRef<Record<number, number>>({});  // Authoritative store (avoids stale closure reads)
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -249,56 +250,94 @@ export default function SubjectiveInterview() {
     }
   };
 
-  const handleSubmitAnswer = () => {
+  // Resolve the remaining time to show for a question.
+  // Submitted questions are locked at 0; unvisited questions start fresh at 300.
+  const resolveTimeFor = (index: number) => {
+    if (submittedQuestions.has(index)) return 0;
+    return timersRef.current[index] ?? 300;
+  };
+
+  const persistTime = (index: number, value: number) => {
+    timersRef.current[index] = value;
+    setTimers({ ...timersRef.current });
+  };
+
+  const handleSubmitAnswer = async () => {
     if (!textAnswer.trim() || !currentQuestion) return;
+    if (submittedQuestions.has(currentQuestionIndex)) return;  // Already answered — no re-submit
 
     const timeSpent = 300 - timeLeft;
-    
-    // Save answer locally
-    setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
-    setSubmittedQuestions(prev => new Set([...prev, currentQuestionIndex]));
-    
-    // Fire the submission (runs in background — don't wait for it)
-    submitAnswerMutation.mutate({
-      questionId: currentQuestion.id,
-      answer: textAnswer,
-      timeSpent,
-    });
+    const answeredIndex = currentQuestionIndex;
+    const answerText = textAnswer;
+    const isLastQuestion = currentQuestionIndex >= questions.length - 1;
 
-    // Immediately move to next question (optimistic UX)
-    handleNextQuestion();
+    // Save answer locally and lock the question
+    setAnswers(prev => ({ ...prev, [answeredIndex]: answerText }));
+    setSubmittedQuestions(prev => new Set([...prev, answeredIndex]));
+
+    if (isLastQuestion) {
+      // Final question: wait for the answer to persist BEFORE completing, otherwise
+      // navigation on complete would abort this in-flight request ("Failed to fetch")
+      // and the last answer could be missing from the results.
+      try {
+        await submitAnswerMutation.mutateAsync({
+          questionId: currentQuestion.id,
+          answer: answerText,
+          timeSpent,
+        });
+        persistTime(answeredIndex, 0);
+        fullscreenMonitor.stop();
+        completeInterviewMutation.mutate();
+      } catch (error) {
+        // Failed to save — roll back the lock so the user can retry
+        setSubmittedQuestions(prev => {
+          const next = new Set(prev);
+          next.delete(answeredIndex);
+          return next;
+        });
+      }
+    } else {
+      // Not the last question: submit in the background and advance optimistically
+      submitAnswerMutation.mutate({
+        questionId: currentQuestion.id,
+        answer: answerText,
+        timeSpent,
+      });
+      handleNextQuestion();
+    }
   };
 
   const navigateToQuestion = (index: number) => {
-    // Save current answer and timer before navigating
-    if (textAnswer.trim()) {
+    if (index === currentQuestionIndex) return;
+
+    // Save current answer and remaining time before navigating
+    if (textAnswer.trim() && !submittedQuestions.has(currentQuestionIndex)) {
       setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
     }
-    // Save remaining time for current question
-    setTimers(prev => ({ ...prev, [currentQuestionIndex]: timeLeft }));
-    
+    persistTime(currentQuestionIndex, submittedQuestions.has(currentQuestionIndex) ? 0 : timeLeft);
+
     // Navigate to the target question
     setCurrentQuestionIndex(index);
     setTextAnswer(answers[index] || "");
-    
-    // Restore saved time for that question, or start fresh (300s) if never visited
-    const savedTime = timers[index] ?? 300;
+
+    // Resume saved time (submitted = locked at 0, unvisited = fresh 300)
+    const savedTime = resolveTimeFor(index);
     reset(savedTime);
-    start();
+    if (savedTime > 0) start();
   };
 
   const handleNextQuestion = () => {
-    // Save timer for current question before moving
-    setTimers(prev => ({ ...prev, [currentQuestionIndex]: 0 }));  // Submitted = no time left
+    // Current question was just submitted — lock its timer at 0
+    persistTime(currentQuestionIndex, 0);
     setTextAnswer("");
-    
+
     if (currentQuestionIndex < questions.length - 1) {
       const nextIdx = currentQuestionIndex + 1;
       setCurrentQuestionIndex(nextIdx);
-      // Use saved time for next question if it was visited before, otherwise fresh 300s
-      const savedTime = timers[nextIdx] ?? 300;
+      const savedTime = resolveTimeFor(nextIdx);
+      setTextAnswer(answers[nextIdx] || "");
       reset(savedTime);
-      start();
+      if (savedTime > 0) start();
     } else {
       // Interview complete
       fullscreenMonitor.stop();
@@ -480,8 +519,9 @@ export default function SubjectiveInterview() {
                     id="text-answer"
                     value={textAnswer}
                     onChange={(e) => setTextAnswer(e.target.value)}
-                    className="min-h-[200px] lg:min-h-[280px] resize-vertical text-base"
-                    placeholder="Type your detailed answer here..."
+                    disabled={submittedQuestions.has(currentQuestionIndex)}
+                    className="min-h-[200px] lg:min-h-[280px] resize-vertical text-base disabled:opacity-70"
+                    placeholder={submittedQuestions.has(currentQuestionIndex) ? "This answer has already been submitted." : "Type your detailed answer here..."}
                     data-testid="text-answer-input"
                   />
                   <div className="flex items-center justify-between">
@@ -490,16 +530,16 @@ export default function SubjectiveInterview() {
                     </p>
                     <Button
                       onClick={handleSubmitAnswer}
-                      disabled={!textAnswer.trim() || submitAnswerMutation.isPending}
+                      disabled={!textAnswer.trim() || submitAnswerMutation.isPending || completeInterviewMutation.isPending || submittedQuestions.has(currentQuestionIndex)}
                       className="btn-gradient px-8"
                       data-testid="button-submit-answer"
                     >
-                      {submitAnswerMutation.isPending ? (
+                      {submitAnswerMutation.isPending || completeInterviewMutation.isPending ? (
                         <span className="flex items-center">
                           <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span>
-                          Evaluating...
+                          {completeInterviewMutation.isPending ? "Finishing..." : "Evaluating..."}
                         </span>
-                      ) : "Submit Answer"}
+                      ) : submittedQuestions.has(currentQuestionIndex) ? "Submitted" : "Submit Answer"}
                     </Button>
                   </div>
                 </div>
