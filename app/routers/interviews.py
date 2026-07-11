@@ -439,91 +439,25 @@ async def submit_answer(
         
         print(f"💾 Progress saved: question {current_question}/{total_questions}")
         
-        # Follow-up question logic: if score is very low, generate a simpler follow-up
-        follow_up_question = None
-        if not completed and evaluation and evaluation.get("score", 10) < 4.0:
-            try:
-                from ..services.ai_service import ai_service
-                from ..schemas import QuestionGenerationRequest
-                
-                print(f"🔄 Low score ({evaluation['score']}), generating follow-up question...")
-                follow_up_request = QuestionGenerationRequest(
-                    company=session.company,
-                    role=session.role,
-                    experience_level=getattr(current_user, 'experience_level', None) or "mid-level",
-                    categories=[str(question.category)],
-                    total_questions=1,
-                    difficulty="easy",
-                    target_companies=[],
-                    target_roles=[],
-                    weak_categories=[str(question.category)]
-                )
-                follow_up_questions = await ai_service.generate_questions(follow_up_request)
-                
-                if follow_up_questions:
-                    fq = follow_up_questions[0]
-                    # Insert as the next question after current position
-                    new_q_number = current_question + 1
-                    
-                    # Shift existing question numbers forward
-                    existing_later = db.query(Question)\
-                        .filter(Question.session_id == session_id, Question.question_number >= new_q_number)\
-                        .order_by(Question.question_number.desc())\
-                        .all()
-                    for eq in existing_later:
-                        eq.question_number += 1
-                    
-                    # Insert follow-up question
-                    db_followup = Question(
-                        session_id=session_id,
-                        question_number=new_q_number,
-                        category=fq.category,
-                        question_text=f"[Follow-up] {fq.question_text}",
-                        options=fq.options,
-                        correct_answer=fq.correct_answer,
-                        explanation=fq.explanation,
-                        difficulty="easy"
-                    )
-                    db.add(db_followup)
-                    
-                    # Update total questions count
-                    db.query(InterviewSession).filter(InterviewSession.id == session_id).update({
-                        InterviewSession.total_questions: InterviewSession.total_questions + 1
-                    })
-                    db.commit()
-                    
-                    total_questions += 1
-                    follow_up_question = {
-                        "id": str(db_followup.id),
-                        "question_text": str(db_followup.question_text),
-                        "category": str(db_followup.category),
-                        "difficulty": "easy",
-                        "options": db_followup.options,
-                        "isFollowUp": True
-                    }
-                    print(f"✅ Follow-up question inserted at position {new_q_number}")
-            except Exception as e:
-                print(f"⚠️ Failed to generate follow-up question: {e}")
-        
-        # Get next question if not completed
+        # Get next question if not completed.
+        # NOTE: The question set is fixed at creation time. The client drives the
+        # interview off the question list it fetched once, so we must NOT insert
+        # extra questions or mutate total_questions here — doing so desyncs the
+        # client and leaves dangling, unanswered questions in the results.
         next_question = None
         if not completed:
-            # If we generated a follow-up, use that
-            if follow_up_question:
-                next_question = follow_up_question
-            else:
-                remaining_questions = db.query(Question)\
-                    .filter(Question.session_id == session_id, Question.question_number > current_question)\
-                    .order_by(Question.question_number)\
-                    .first()
-                if remaining_questions:
-                    next_question = {
-                        "id": str(remaining_questions.id),
-                        "question_text": str(remaining_questions.question_text),
-                        "category": str(remaining_questions.category),
-                        "difficulty": str(remaining_questions.difficulty),
-                        "options": remaining_questions.options
-                    }
+            remaining_questions = db.query(Question)\
+                .filter(Question.session_id == session_id, Question.question_number > current_question)\
+                .order_by(Question.question_number)\
+                .first()
+            if remaining_questions:
+                next_question = {
+                    "id": str(remaining_questions.id),
+                    "question_text": str(remaining_questions.question_text),
+                    "category": str(remaining_questions.category),
+                    "difficulty": str(remaining_questions.difficulty),
+                    "options": remaining_questions.options
+                }
         
         return {
             "evaluation": evaluation,
@@ -1016,15 +950,6 @@ async def submit_answer_alias(
 ):
     """Submit answer - alias for frontend compatibility"""
     return await submit_answer(session_id, answer_data, current_user, db)
-
-@router.post("/{session_id}/complete")
-async def complete_interview_session_alias(
-    session_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Complete interview session - alias for frontend compatibility"""
-    return await complete_interview_session(session_id, current_user, db)
 
 @router.get("/{session_id}/results")
 async def get_interview_results_alias(
