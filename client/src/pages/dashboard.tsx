@@ -457,7 +457,13 @@ export default function Dashboard() {
                           {session.mode === "voice" ? "Voice" : "Subjective"} Interview - {session.company} {session.role}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {session.date} • Score: {session.score}/10
+                          {(() => {
+                            const raw = session.completedAt || session.createdAt;
+                            const dateText = raw ? new Date(raw).toLocaleDateString() : "";
+                            const scoreVal = session.overallScore ?? session.overall_score;
+                            const scoreText = scoreVal != null ? Number(scoreVal).toFixed(1) : "N/A";
+                            return `${dateText ? dateText + " • " : ""}Score: ${scoreText}/10`;
+                          })()}
                         </div>
                       </div>
                     </div>
