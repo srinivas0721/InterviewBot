@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { downloadPDFReport } from "@/lib/pdfGenerator";
+import { Markdown } from "@/components/markdown";
 import { 
   Trophy, 
   Star, 
@@ -965,7 +966,7 @@ Practiced with InterviewBot AI 🤖`;
                           <div>
                             <h4 className="font-semibold text-foreground mb-2">Feedback:</h4>
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-lg p-4 shadow-sm">
-                              <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.feedback}</p>
+                              <Markdown className="text-gray-900 dark:text-gray-100">{item.answer.feedback}</Markdown>
                             </div>
                           </div>
 
@@ -977,7 +978,7 @@ Practiced with InterviewBot AI 🤖`;
                                 Missing Points:
                               </h4>
                               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
-                                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.missingPoints}</p>
+                                <Markdown className="text-gray-900 dark:text-gray-100">{item.answer.missingPoints}</Markdown>
                               </div>
                             </div>
                           )}
@@ -990,7 +991,7 @@ Practiced with InterviewBot AI 🤖`;
                                 Ideal Answer:
                               </h4>
                               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{item.answer.correctedAnswer}</p>
+                                <Markdown className="text-gray-900 dark:text-gray-100">{item.answer.correctedAnswer}</Markdown>
                               </div>
                             </div>
                           )}
