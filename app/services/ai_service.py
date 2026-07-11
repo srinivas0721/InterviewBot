@@ -240,35 +240,45 @@ Format:
         self.chain = self.prompt | self.llm | self.parser
 
     async def evaluate_answer(self, request: AnswerEvaluationRequest) -> AnswerEvaluation:
-        try:
-            input_data = {
-                "question_text": request.question_text,
-                "category": request.category,
-                "answer_text": request.answer_text,
-                "input": "Evaluate this answer"
-            }
-            
-            result = await self.chain.ainvoke(input_data)
-            
-            evaluation_details = EvaluationDetails(
-                clarity=result.get("evaluation_details", {}).get("clarity"),
-                depth=result.get("evaluation_details", {}).get("depth"),
-                confidence=result.get("evaluation_details", {}).get("confidence"),
-                relevance=result.get("evaluation_details", {}).get("relevance"),
-                structure=result.get("evaluation_details", {}).get("structure")
-            )
-            
-            return AnswerEvaluation(
-                score=result.get("score", 5.0),
-                feedback=result.get("feedback", "Your answer shows understanding but could be improved."),
-                corrected_answer=result.get("corrected_answer", ""),
-                missing_points=result.get("missing_points", ""),
-                evaluation_details=evaluation_details
-            )
-            
-        except Exception as e:
-            print(f"Error evaluating answer: {e}")
-            return self._get_fallback_evaluation(request)
+        input_data = {
+            "question_text": request.question_text,
+            "category": request.category,
+            "answer_text": request.answer_text,
+            "input": "Evaluate this answer"
+        }
+
+        # Try the real AI evaluation with a timeout, and retry once on failure/timeout
+        # before giving up. This mirrors question generation's resilience and avoids
+        # falling back to a generic (question-agnostic) evaluation more than necessary.
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                result = await asyncio.wait_for(self.chain.ainvoke(input_data), timeout=12.0)
+
+                evaluation_details = EvaluationDetails(
+                    clarity=result.get("evaluation_details", {}).get("clarity"),
+                    depth=result.get("evaluation_details", {}).get("depth"),
+                    confidence=result.get("evaluation_details", {}).get("confidence"),
+                    relevance=result.get("evaluation_details", {}).get("relevance"),
+                    structure=result.get("evaluation_details", {}).get("structure")
+                )
+
+                return AnswerEvaluation(
+                    score=result.get("score", 5.0),
+                    feedback=result.get("feedback", "Your answer shows understanding but could be improved."),
+                    corrected_answer=result.get("corrected_answer", ""),
+                    missing_points=result.get("missing_points", ""),
+                    evaluation_details=evaluation_details
+                )
+            except asyncio.TimeoutError as e:
+                last_error = e
+                print(f"⏰ Answer evaluation timed out (attempt {attempt + 1}/2)")
+            except Exception as e:
+                last_error = e
+                print(f"❌ Error evaluating answer (attempt {attempt + 1}/2): {e}")
+
+        print(f"❌ Answer evaluation failed after retries: {last_error}")
+        return self._get_fallback_evaluation(request)
 
     def _get_fallback_evaluation(self, request: AnswerEvaluationRequest) -> AnswerEvaluation:
         """Fallback evaluation if AI fails"""
@@ -303,8 +313,10 @@ Format:
         return AnswerEvaluation(
             score=score,
             feedback=feedback,
-            corrected_answer="A complete, structured answer would include: clear explanation of key concepts, relevant examples, and demonstration of deep understanding. Focus on accuracy and clarity.",
-            missing_points="The answer lacks: specific technical details, concrete examples, proper structure, and depth of explanation.",
+            # Honest placeholder — this is NOT a real ideal answer to the question.
+            # The AI evaluator was unavailable, so we don't fabricate one.
+            corrected_answer="",
+            missing_points="An ideal answer couldn't be generated right now because the AI evaluator was unavailable. Your score above is based on basic checks only.",
             evaluation_details=EvaluationDetails(
                 clarity=max(score - 1, 1.0),  # Ensure minimum 1.0
                 depth=max(score - 2, 1.0),

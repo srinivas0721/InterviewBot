@@ -360,8 +360,11 @@ async def submit_answer(
                     print(f"🚫 Nonsensical answer detected, overriding score to 1.0")
                     evaluation["score"] = 1.0
                     evaluation["feedback"] = "Your answer doesn't appear to address the question. Please provide a relevant technical response."
-                    corrected_answer = "Please provide a clear, structured answer that directly addresses the question asked."
                     missing_points = "The answer provided does not contain relevant technical content."
+                    # Keep whatever real ideal answer the AI already produced for this
+                    # question (if any) instead of overwriting it with generic filler.
+                    if not corrected_answer:
+                        corrected_answer = ""
             except Exception as e:
                 print(f"⚠️ Could not check for nonsensical answer: {e}")
                 # Continue with original evaluation without override
