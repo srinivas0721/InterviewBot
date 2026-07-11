@@ -38,8 +38,11 @@ export default function SubjectiveInterview() {
   const [isResuming, setIsResuming] = useState(false);
   const [answers, setAnswers] = useState<Record<number, string>>({});  // Track answers per question index
   const [submittedQuestions, setSubmittedQuestions] = useState<Set<number>>(new Set());  // Which questions were submitted
+  const [expiredQuestions, setExpiredQuestions] = useState<Set<number>>(new Set());  // Questions whose timer ran out (locked)
   const [timers, setTimers] = useState<Record<number, number>>({});  // Track remaining time per question
   const timersRef = useRef<Record<number, number>>({});  // Authoritative store (avoids stale closure reads)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);  // Final review/confirm modal
+  const [isSubmittingAll, setIsSubmittingAll] = useState(false);  // Finalizing the whole interview
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -95,14 +98,27 @@ export default function SubjectiveInterview() {
   const hasCreatedSession = useRef(false);
 
   // Timer for each question (300 seconds = 5 minutes)
-  const { timeLeft, isRunning, start, reset, isWarning } = useTimer(300, () => {
-    // Auto-submit when time runs out
+  const { timeLeft, isRunning, start, stop, reset, isWarning } = useTimer(300, () => {
+    // Time is up for the current question: freeze its draft and lock the box.
+    const idx = currentQuestionIndex;
     if (textAnswer.trim()) {
-      handleSubmitAnswer();
+      setAnswers(prev => ({ ...prev, [idx]: textAnswer }));
+    }
+    persistTime(idx, 0);
+    setExpiredQuestions(prev => new Set([...prev, idx]));
+
+    if (idx >= questions.length - 1) {
+      // Last question — open the final review instead of forcing completion
+      toast({
+        title: "Time's up!",
+        description: "This question is now locked. Review and submit your interview.",
+        variant: "destructive",
+      });
+      setShowSubmitConfirm(true);
     } else {
       toast({
         title: "Time's up!",
-        description: "Moving to next question...",
+        description: "This question is locked. Moving to the next one...",
         variant: "destructive",
       });
       handleNextQuestion();
@@ -255,10 +271,13 @@ export default function SubjectiveInterview() {
     }
   };
 
+  // A question is locked (read-only) once it has been submitted or its timer expired.
+  const isLocked = (index: number) => submittedQuestions.has(index) || expiredQuestions.has(index);
+
   // Resolve the remaining time to show for a question.
-  // Submitted questions are locked at 0; unvisited questions start fresh at 300.
+  // Locked questions sit at 0; unvisited questions start fresh at 300.
   const resolveTimeFor = (index: number) => {
-    if (submittedQuestions.has(index)) return 0;
+    if (isLocked(index)) return 0;
     return timersRef.current[index] ?? 300;
   };
 
@@ -268,47 +287,93 @@ export default function SubjectiveInterview() {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!textAnswer.trim() || !currentQuestion) return;
-    if (submittedQuestions.has(currentQuestionIndex)) return;  // Already answered — no re-submit
+    if (!currentQuestion || isLocked(currentQuestionIndex)) return;
 
-    const timeSpent = 300 - timeLeft;
-    const answeredIndex = currentQuestionIndex;
-    const answerText = textAnswer;
     const isLastQuestion = currentQuestionIndex >= questions.length - 1;
 
-    // Save answer locally and lock the question
+    if (isLastQuestion) {
+      // On the final question, don't finalize immediately. Save this answer (if any)
+      // then open the review modal so the user can confirm and revisit drafts.
+      if (textAnswer.trim()) {
+        const answeredIndex = currentQuestionIndex;
+        const answerText = textAnswer;
+        const timeSpent = 300 - timeLeft;
+        setAnswers(prev => ({ ...prev, [answeredIndex]: answerText }));
+        setSubmittedQuestions(prev => new Set([...prev, answeredIndex]));
+        try {
+          await submitAnswerMutation.mutateAsync({
+            questionId: currentQuestion.id,
+            answer: answerText,
+            timeSpent,
+          });
+          persistTime(answeredIndex, 0);
+        } catch (error) {
+          setSubmittedQuestions(prev => {
+            const next = new Set(prev);
+            next.delete(answeredIndex);
+            return next;
+          });
+          return;  // Keep the modal closed so the user can retry
+        }
+      }
+      stop();  // Pause the countdown while the user reviews
+      setShowSubmitConfirm(true);
+      return;
+    }
+
+    // Not the last question — require an answer, submit in the background, advance
+    if (!textAnswer.trim()) return;
+    const answeredIndex = currentQuestionIndex;
+    const answerText = textAnswer;
+    const timeSpent = 300 - timeLeft;
     setAnswers(prev => ({ ...prev, [answeredIndex]: answerText }));
     setSubmittedQuestions(prev => new Set([...prev, answeredIndex]));
+    submitAnswerMutation.mutate({
+      questionId: currentQuestion.id,
+      answer: answerText,
+      timeSpent,
+    });
+    handleNextQuestion();
+  };
 
-    if (isLastQuestion) {
-      // Final question: wait for the answer to persist BEFORE completing, otherwise
-      // navigation on complete would abort this in-flight request ("Failed to fetch")
-      // and the last answer could be missing from the results.
-      try {
+  // Indices of questions that have a draft answer but were never submitted.
+  const getDraftIndices = () =>
+    questions
+      .map((_, i) => i)
+      .filter((i) => {
+        if (submittedQuestions.has(i)) return false;
+        const ans = (i === currentQuestionIndex ? textAnswer : answers[i]) || "";
+        return ans.trim().length > 0;
+      });
+
+  // Finalize: submit any remaining drafts, then complete the interview.
+  const handleConfirmFinalSubmit = async () => {
+    setIsSubmittingAll(true);
+    try {
+      const draftIndices = getDraftIndices();
+      for (const i of draftIndices) {
+        const q = questions[i];
+        const ans = (i === currentQuestionIndex ? textAnswer : answers[i]) || "";
+        if (!q || !ans.trim()) continue;
+        const timeSpent = 300 - (timersRef.current[i] ?? 0);
         await submitAnswerMutation.mutateAsync({
-          questionId: currentQuestion.id,
-          answer: answerText,
+          questionId: q.id,
+          answer: ans,
           timeSpent,
         });
-        persistTime(answeredIndex, 0);
-        fullscreenMonitor.stop();
-        completeInterviewMutation.mutate();
-      } catch (error) {
-        // Failed to save — roll back the lock so the user can retry
-        setSubmittedQuestions(prev => {
-          const next = new Set(prev);
-          next.delete(answeredIndex);
-          return next;
-        });
+        setSubmittedQuestions(prev => new Set([...prev, i]));
       }
-    } else {
-      // Not the last question: submit in the background and advance optimistically
-      submitAnswerMutation.mutate({
-        questionId: currentQuestion.id,
-        answer: answerText,
-        timeSpent,
+      setShowSubmitConfirm(false);
+      fullscreenMonitor.stop();
+      completeInterviewMutation.mutate();
+    } catch (error: any) {
+      toast({
+        title: "Failed to submit interview",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
       });
-      handleNextQuestion();
+    } finally {
+      setIsSubmittingAll(false);
     }
   };
 
@@ -316,10 +381,10 @@ export default function SubjectiveInterview() {
     if (index === currentQuestionIndex) return;
 
     // Save current answer and remaining time before navigating
-    if (textAnswer.trim() && !submittedQuestions.has(currentQuestionIndex)) {
+    if (textAnswer.trim() && !isLocked(currentQuestionIndex)) {
       setAnswers(prev => ({ ...prev, [currentQuestionIndex]: textAnswer }));
     }
-    persistTime(currentQuestionIndex, submittedQuestions.has(currentQuestionIndex) ? 0 : timeLeft);
+    persistTime(currentQuestionIndex, isLocked(currentQuestionIndex) ? 0 : timeLeft);
 
     // Navigate to the target question
     setCurrentQuestionIndex(index);
@@ -452,6 +517,79 @@ export default function SubjectiveInterview() {
         </AlertDialog>
       )}
 
+      {/* Final review / confirm-before-submit modal */}
+      {showSubmitConfirm && (() => {
+        const completedCount = submittedQuestions.size;
+        const draftIndices = getDraftIndices();
+        const draftCount = draftIndices.length;
+        const unansweredCount = Math.max(0, questions.length - completedCount - draftCount);
+        return (
+          <AlertDialog open={showSubmitConfirm}>
+            <AlertDialogContent className="max-w-lg">
+              <AlertDialogTitle className="text-2xl font-bold">
+                Submit your interview?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-4">
+                <span className="block text-muted-foreground">
+                  Here's a summary of your {questions.length} questions. Once you submit,
+                  answers are final and can't be changed.
+                </span>
+                <span className="grid grid-cols-3 gap-2">
+                  <span className="block text-center rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                    <span className="block text-2xl font-bold text-green-500">{completedCount}</span>
+                    <span className="block text-xs text-muted-foreground">Submitted</span>
+                  </span>
+                  <span className="block text-center rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                    <span className="block text-2xl font-bold text-yellow-500">{draftCount}</span>
+                    <span className="block text-xs text-muted-foreground">Drafts</span>
+                  </span>
+                  <span className="block text-center rounded-lg border border-muted p-3">
+                    <span className="block text-2xl font-bold text-muted-foreground">{unansweredCount}</span>
+                    <span className="block text-xs text-muted-foreground">Unanswered</span>
+                  </span>
+                </span>
+                {draftCount > 0 && (
+                  <span className="block rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-foreground">
+                    You have {draftCount} draft{draftCount > 1 ? "s" : ""} (question
+                    {draftCount > 1 ? "s" : ""} {draftIndices.map((i) => i + 1).join(", ")}).
+                    They'll be submitted as-is. Choose "Go Back" if you want to edit them first.
+                  </span>
+                )}
+                {unansweredCount > 0 && (
+                  <span className="block text-sm text-muted-foreground">
+                    {unansweredCount} question{unansweredCount > 1 ? "s" : ""} will be left unanswered.
+                  </span>
+                )}
+              </AlertDialogDescription>
+              <div className="flex justify-end space-x-3 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSubmitConfirm(false)}
+                  disabled={isSubmittingAll}
+                >
+                  Go Back
+                </Button>
+                <Button
+                  onClick={handleConfirmFinalSubmit}
+                  className="btn-gradient"
+                  disabled={isSubmittingAll}
+                  data-testid="button-confirm-submit"
+                >
+                  {isSubmittingAll ? (
+                    <span className="flex items-center">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span>
+                      Submitting...
+                    </span>
+                  ) : (
+                    "Submit Interview"
+                  )}
+                </Button>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
+        );
+      })()}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -524,18 +662,34 @@ export default function SubjectiveInterview() {
                     id="text-answer"
                     value={textAnswer}
                     onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={submittedQuestions.has(currentQuestionIndex)}
+                    disabled={isLocked(currentQuestionIndex)}
                     className="min-h-[200px] lg:min-h-[280px] resize-vertical text-base disabled:opacity-70"
-                    placeholder={submittedQuestions.has(currentQuestionIndex) ? "This answer has already been submitted." : "Type your detailed answer here..."}
+                    placeholder={
+                      submittedQuestions.has(currentQuestionIndex)
+                        ? "This answer has already been submitted."
+                        : expiredQuestions.has(currentQuestionIndex)
+                        ? "Time's up — this answer is locked."
+                        : "Type your detailed answer here..."
+                    }
                     data-testid="text-answer-input"
                   />
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
                       {textAnswer.length > 0 && <span className="text-primary font-medium">{textAnswer.split(/\s+/).filter(Boolean).length} words</span>}
+                      {isLocked(currentQuestionIndex) && (
+                        <span className="ml-2 text-muted-foreground">🔒 Locked</span>
+                      )}
                     </p>
                     <Button
                       onClick={handleSubmitAnswer}
-                      disabled={!textAnswer.trim() || submitAnswerMutation.isPending || completeInterviewMutation.isPending || submittedQuestions.has(currentQuestionIndex)}
+                      disabled={
+                        submitAnswerMutation.isPending ||
+                        completeInterviewMutation.isPending ||
+                        // Last question always allows opening the review modal;
+                        // other questions need an unlocked, non-empty answer.
+                        (currentQuestionIndex < questions.length - 1 &&
+                          (!textAnswer.trim() || isLocked(currentQuestionIndex)))
+                      }
                       className="btn-gradient px-8"
                       data-testid="button-submit-answer"
                     >
@@ -544,7 +698,13 @@ export default function SubjectiveInterview() {
                           <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span>
                           {completeInterviewMutation.isPending ? "Finishing..." : "Evaluating..."}
                         </span>
-                      ) : submittedQuestions.has(currentQuestionIndex) ? "Submitted" : "Submit Answer"}
+                      ) : currentQuestionIndex >= questions.length - 1 ? (
+                        "Review & Submit"
+                      ) : submittedQuestions.has(currentQuestionIndex) ? (
+                        "Submitted"
+                      ) : (
+                        "Submit Answer"
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -568,19 +728,30 @@ export default function SubjectiveInterview() {
                           ? "bg-primary text-white shadow-[0_0_10px_hsla(262,83%,58%,0.5)]"
                           : submittedQuestions.has(idx)
                           ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                          : expiredQuestions.has(idx)
+                          ? "bg-red-500/20 text-red-400 border border-red-500/30"
                           : answers[idx]
                           ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
                           : "bg-muted/50 text-muted-foreground hover:bg-muted"
                       }`}
-                      title={submittedQuestions.has(idx) ? "Submitted" : answers[idx] ? "Draft saved" : "Not answered"}
+                      title={
+                        submittedQuestions.has(idx)
+                          ? "Submitted"
+                          : expiredQuestions.has(idx)
+                          ? "Time expired (locked)"
+                          : answers[idx]
+                          ? "Draft saved"
+                          : "Not answered"
+                      }
                     >
                       {idx + 1}
                     </button>
                   ))}
                 </div>
-                <div className="mt-3 flex items-center gap-3 text-[10px] text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500/50"></span>Submitted</span>
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-500/50"></span>Draft</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500/50"></span>Expired</span>
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-primary"></span>Current</span>
                 </div>
               </CardContent>
