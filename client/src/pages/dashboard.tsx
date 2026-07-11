@@ -528,7 +528,7 @@ export default function Dashboard() {
                 {recentSessions && recentSessions.length > 0 &&
                   recentSessions[0]?.recommendations &&
                   recentSessions[0].recommendations.length > 0 ? (
-                      recentSessions[0].recommendations.map((rec, index) => (
+                      recentSessions[0].recommendations.map((rec: string, index: number) => (
                         <div key={index} className="flex items-start">
                           <div className="p-1 bg-blue-100 rounded mr-3 mt-1">
                             <Lightbulb className="h-4 w-4 text-blue-600" />

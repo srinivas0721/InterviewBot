@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,12 +15,18 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  initialMode?: "login" | "signup";
 }
 
-export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
-  const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
+export function AuthModal({ isOpen, onClose, onSuccess, initialMode = "login" }: AuthModalProps) {
+  const [activeTab, setActiveTab] = useState<"login" | "signup">(initialMode);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Open on the requested tab (e.g. "Get Started" → signup) each time it opens.
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialMode);
+  }, [isOpen, initialMode]);
 
   const loginForm = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
