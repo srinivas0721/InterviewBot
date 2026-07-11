@@ -97,9 +97,7 @@ async def login(login_data: UserLogin, request: Request, db: Session = Depends(g
         # Set session
         request.session["user_id"] = str(user.id)
         
-        response = AuthResponse(user=UserResponse.model_validate(user))
-        print(f"🔍 LOGIN RESPONSE: {response.model_dump(by_alias=True)}")
-        return response
+        return AuthResponse(user=UserResponse.model_validate(user))
         
     except HTTPException:
         raise
